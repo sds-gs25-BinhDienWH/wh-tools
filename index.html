@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="application-name" content="WH Tools - GS25 Bình Điền">
+<meta name="apple-mobile-web-app-title" content="WH Tools">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A1930">
+<title>WH Tools · GS25 Bình Điền</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="netBar" class="net-bar"></div>
+
+<div class="page">
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <img class="topbar-logo" src="icon.svg" alt="">
+        <b>WH Tools<small>GS25 Bình Điền</small></b>
+      </div>
+      <button id="btnRefresh" class="btn-icon" title="Tải lại" aria-label="Tải lại">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+
+    <div class="content">
+      <div id="status" class="status">…</div>
+      <div id="banner" class="banner" hidden></div>
+
+      <section id="view-list" class="view">
+        <div class="tools">
+          <input id="q" type="search" placeholder="Tìm mã hoặc tên hàng" autocomplete="off">
+          <select id="sort" aria-label="Sắp xếp">
+            <option value="server">Thứ tự gốc</option>
+            <option value="total">Nhiều nhất</option>
+          </select>
+        </div>
+        <div id="summary" class="summary"></div>
+        <details id="doneBox" class="done" hidden><summary id="doneTitle"></summary><div id="doneList"></div></details>
+        <div id="list"></div>
+      </section>
+
+      <section id="view-move" class="view" hidden>
+        <h2>Di chuyển hàng</h2>
+        <form id="formMove" class="row">
+          <input id="moveCode" inputmode="numeric" placeholder="Quét hoặc nhập mã hàng" autocomplete="off">
+          <button type="submit">Tra</button>
+        </form>
+        <div id="moveOut" style="margin-top:12px"></div>
+      </section>
+
+      <section id="view-store" class="view" hidden>
+        <h2>Ghép hàng theo cửa hàng</h2>
+        <form id="formStore" class="row">
+          <input id="storeCode" placeholder="Quét hoặc nhập mã cửa hàng" autocomplete="off">
+          <button type="submit">Tra</button>
+        </form>
+        <div id="storeOut" style="margin-top:12px"></div>
+      </section>
+
+      <section id="view-das" class="view" hidden>
+        <h2>Vị trí phân loại (DAS)</h2>
+        <form id="formDas" class="stack">
+          <input id="dasDate" type="date">
+          <div class="row">
+            <input id="dasStore" placeholder="Mã cửa hàng" autocomplete="off">
+            <button type="submit">Tra</button>
+          </div>
+        </form>
+        <div id="dasOut" style="margin-top:12px"></div>
+      </section>
+
+      <section id="view-set" class="view" hidden>
+        <h2>Cài đặt</h2>
+        <div class="panel">
+          <label for="setBase" style="margin-top:0">Địa chỉ API</label>
+          <input id="setBase" autocomplete="off" spellcheck="false">
+          <p class="hint">Gọi thẳng server kho: <code>http://119.15.179.186:8081/api</code> (chỉ chạy khi mở trang bằng http hoặc localhost).<br>
+            Mở từ GitHub Pages (https): dán địa chỉ Web App của proxy Apps Script (<code>https://script.google.com/macros/s/…/exec</code>).</p>
+          <label for="setEvery">Tự cập nhật mỗi</label>
+          <select id="setEvery" style="max-width:none;width:100%">
+            <option value="10">10 giây</option>
+            <option value="20">20 giây</option>
+            <option value="30">30 giây</option>
+            <option value="60">60 giây</option>
+          </select>
+          <div class="row" style="margin-top:14px">
+            <button id="btnSave" type="button">Lưu</button>
+            <button id="btnTest" type="button" class="ghost">Kiểm tra</button>
+            <button id="btnReset" type="button" class="ghost">Mặc định</button>
+          </div>
+          <div id="setOut" class="hint" style="margin-top:10px"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="rail">
+    <img class="rail-logo" src="icon.svg" alt="">
+    <div class="rail-item active" data-tab="list">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>
+      <span>Hàng chờ</span>
+    </div>
+    <div class="rail-item" data-tab="move">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
+      <span>Di chuyển</span>
+    </div>
+    <div class="rail-item" data-tab="store">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6"/></svg>
+      <span>Ghép hàng</span>
+    </div>
+    <div class="rail-item" data-tab="das">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <span>DAS</span>
+    </div>
+    <div class="rail-item" data-tab="set">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span>Cài đặt</span>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <div id="dlgBody"></div>
+  <button id="dlgClose" type="button">Đóng</button>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

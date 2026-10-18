@@ -1,0 +1,322 @@
+'use strict';
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const LINES = ['A01','A02','A03','A04','A05','A06','A07','B08','B09','B10','B11','B12','B13','B14'];
+const DEFAULT_BASE = 'http://119.15.179.186:8081/api';
+const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
+const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+const S = {
+  base: store.get('base', DEFAULT_BASE),
+  every: store.get('every', 20),
+  tab: store.get('tab', 'list'),
+  items: [], prevMap: null, flash: new Map(), done: [],
+  updatedAt: null, busy: false, error: null, timer: null,
+};
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+const sum = a => a.reduce((x, y) => x + y, 0);
+const hhmmss = t => new Date(t).toLocaleTimeString('vi-VN', { hour12: false });
+
+// ---------- Gọi API ----------
+const isProxy = b => /script\.google(usercontent)?\.com/.test(b);
+const mixedBlocked = () => location.protocol === 'https:' && /^http:/i.test(S.base);
+
+// Thanh chạy ngang đầu trang: chỉ hiện nếu chờ quá 150ms để không nháy khi server trả lời nhanh
+let netPending = 0, netTimer = null;
+function netStart() {
+  if (++netPending === 1) { clearTimeout(netTimer); netTimer = setTimeout(() => $('#netBar').classList.add('on'), 150); }
+}
+function netDone() {
+  netPending = Math.max(0, netPending - 1);
+  if (netPending === 0) { clearTimeout(netTimer); $('#netBar').classList.remove('on'); }
+}
+
+async function api(method, path, body) {
+  if (mixedBlocked()) throw new Error('Trang https không gọi được địa chỉ http. Vào Cài đặt và dán địa chỉ proxy Apps Script.');
+  const base = S.base.trim().replace(/\/+$/, '');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15000);
+  netStart();
+  try {
+    let res;
+    if (isProxy(base)) {
+      // text/plain để tránh preflight CORS; proxy tự gọi server kho
+      res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ method, path, body: body || null }), signal: ctl.signal });
+    } else if (method === 'GET') {
+      res = await fetch(base + path, { signal: ctl.signal });
+    } else {
+      res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}), signal: ctl.signal });
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data && data.__error) throw new Error(data.__error);
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Quá thời gian chờ (15 giây)');
+    throw e;
+  } finally { clearTimeout(timer); netDone(); }
+}
+
+// ---------- Dữ liệu hàng chờ ----------
+function parseBulk(j) {
+  // Hết hàng chờ: server trả {"status":"Success","message":"No item pending found","data":null}
+  if (j && j.data == null && /success/i.test(j.status || '')) return [];
+  const rows = Array.isArray(j) ? j : j && j.data;
+  if (!Array.isArray(rows)) throw new Error((j && j.message) || 'Dữ liệu trả về không hợp lệ');
+  return rows.map(r => ({
+    code: String(r.ItemCode ?? ''), name: String(r.ItemName ?? ''),
+    q: LINES.map(l => Number(r[l]) || 0),
+  }));
+}
+const zoneA = it => sum(it.q.slice(0, 7));
+const zoneB = it => sum(it.q.slice(7));
+
+function applyDiff(items) {
+  const now = Date.now();
+  for (const [c, f] of S.flash) if (now - f.at > FLASH_MS) S.flash.delete(c);
+  if (S.prevMap) {
+    const cur = new Map(items.map(i => [i.code, i]));
+    for (const it of items) {
+      const p = S.prevMap.get(it.code);
+      if (!p) { S.flash.set(it.code, { type: 'new', idx: new Set(), at: now }); continue; }
+      const idx = new Set();
+      it.q.forEach((v, k) => { if (v !== p.q[k]) idx.add(k); });
+      if (idx.size) S.flash.set(it.code, { type: 'chg', idx, at: now });
+    }
+    for (const [c, p] of S.prevMap) if (!cur.has(c)) S.done.unshift({ code: c, name: p.name, at: now });
+    S.done = S.done.slice(0, 30);
+  }
+  S.prevMap = new Map(items.map(i => [i.code, i]));
+}
+
+async function refresh() {
+  if (S.busy) return;
+  S.busy = true; renderStatus();
+  try {
+    const items = parseBulk(await api('GET', '/sftp/getAssortingPending'));
+    applyDiff(items);
+    S.items = items; S.updatedAt = Date.now(); S.error = null;
+    store.set('snap', { at: S.updatedAt, items });
+  } catch (e) {
+    S.error = e.message || String(e);
+  } finally {
+    S.busy = false; renderList(); renderStatus();
+  }
+}
+
+function schedule() {
+  clearTimeout(S.timer);
+  S.timer = setTimeout(async () => {
+    if (!document.hidden && S.tab === 'list') await refresh();
+    schedule();
+  }, S.every * 1000);
+}
+
+// ---------- Hiển thị ----------
+function renderStatus() {
+  const el = $('#status');
+  el.classList.toggle('err', !!S.error);
+  el.classList.toggle('busy', S.busy);
+  $('#btnRefresh').classList.toggle('spinning', S.busy);
+  if (S.busy) el.textContent = 'Đang tải…';
+  else if (S.error) el.textContent = 'Lỗi: ' + S.error + (S.updatedAt ? ' · dữ liệu lúc ' + hhmmss(S.updatedAt) : '');
+  else if (S.updatedAt) el.textContent = 'Cập nhật ' + hhmmss(S.updatedAt) + ' · tự tải mỗi ' + S.every + ' giây';
+  else el.textContent = 'Chưa có dữ liệu';
+  const b = $('#banner');
+  b.hidden = !mixedBlocked();
+  b.textContent = 'Trang https không gọi được địa chỉ http của server kho. Vào Cài đặt và dán địa chỉ Web App của proxy Apps Script.';
+}
+
+function linesGrid(q, flashIdx) {
+  const row = from => q.slice(from, from + 7).map((v, i) => {
+    const k = from + i;
+    return `<div class="cell ${v === 0 ? 'zero' : ''} ${flashIdx && flashIdx.has(k) ? 'flash' : ''}"><small>${LINES[k]}</small><b>${v}</b></div>`;
+  }).join('');
+  return `<div class="grid">${row(0)}</div><div class="grid">${row(7)}</div>`;
+}
+
+function renderList() {
+  const q = fold($('#q').value.trim());
+  let items = S.items.filter(i => !q || fold(i.code).includes(q) || fold(i.name).includes(q));
+  if ($('#sort').value === 'total') items = [...items].sort((a, b) => sum(b.q) - sum(a.q));
+  const all = S.items;
+  $('#summary').innerHTML = all.length
+    ? `<span class="pill">${items.length}/${all.length} mã</span><span class="pill zA">Khu A: ${sum(all.map(zoneA))}</span><span class="pill zB">Khu B: ${sum(all.map(zoneB))}</span>`
+    : (S.error ? '' : (S.updatedAt ? '<div class="empty-note">Hiện không có hàng chờ phân loại</div>' : ''));
+
+  const dBox = $('#doneBox');
+  dBox.hidden = !S.done.length;
+  $('#doneTitle').textContent = `Vừa xong (${S.done.length})`;
+  $('#doneList').innerHTML = S.done.map(d => `<div>${hhmmss(d.at)} · ${esc(d.code)} · ${esc(d.name)}</div>`).join('');
+
+  const now = Date.now();
+  $('#list').innerHTML = items.map(it => {
+    const f = S.flash.get(it.code);
+    const live = f && now - f.at <= FLASH_MS ? f : null;
+    const chips = it.q.map((v, k) => v ? `<span class="chip ${LINES[k][0]} ${live && live.idx.has(k) ? 'flash' : ''}">${LINES[k]}<b>${v}</b></span>` : '').join('');
+    return `<div class="card ${live && live.type === 'new' ? 'new' : ''}" data-code="${esc(it.code)}">
+      <div class="name">${esc(it.name)}${live ? `<span class="tag">${live.type === 'new' ? 'MỚI' : 'ĐỔI'}</span>` : ''}</div>
+      <div class="meta">${esc(it.code)} · <span class="zA">A ${zoneA(it)}</span> · <span class="zB">B ${zoneB(it)}</span> · Tổng ${sum(it.q)}</div>
+      <div class="chips">${chips || '<span class="muted">Không còn hàng chờ</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function showDetail(code) {
+  const it = S.items.find(i => i.code === code);
+  if (!it) return;
+  const f = S.flash.get(code);
+  $('#dlgBody').innerHTML = `<h2>${esc(it.name)}</h2><div class="muted">${esc(it.code)}</div>
+    ${linesGrid(it.q, f && f.idx)}
+    <div class="totals"><span class="zA">Khu A: ${zoneA(it)}</span><span class="zB">Khu B: ${zoneB(it)}</span><span>Tổng: ${sum(it.q)}</span></div>`;
+  $('#dlg').showModal();
+}
+
+const errBox = e => `<div class="err-box">${esc(e.message || e)}</div>`;
+const loading = '<p class="muted">Đang tải…</p>';
+
+// ---------- Di chuyển hàng (itemPending) ----------
+async function lookupItem(raw) {
+  const code = raw.trim();
+  if (!code) return;
+  const out = $('#moveOut');
+  out.innerHTML = loading;
+  try {
+    const j = await api('POST', '/pda/itemPending', { ItemCode: code });
+    if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
+    const q = LINES.map(() => 0);
+    for (const d of j.Details) {
+      const k = LINES.indexOf(String(d.Line || '').replace('-', ''));
+      if (k >= 0) q[k] = Number(d.Quantity) || 0;
+    }
+    out.innerHTML = `<div class="card"><div class="name">${esc(j.ItemName || 'Không rõ tên')}</div>
+      <div class="meta">${esc(code)}</div>${linesGrid(q)}
+      <div class="totals"><span class="zA">Khu A: ${zoneA({ q })}</span><span class="zB">Khu B: ${zoneB({ q })}</span><span>Tổng: ${sum(q)}</span></div></div>`;
+  } catch (e) { out.innerHTML = errBox(e); }
+  $('#moveCode').value = ''; $('#moveCode').focus();
+}
+
+// ---------- Ghép hàng (storeAssorted) ----------
+// Quy tắc làm sạch mã cửa hàng lấy từ app cũ
+function cleanStoreCode(s) {
+  let t = String(s || '').trim();
+  const parts = t.split(/#./);
+  if (parts.length === 4) t = parts[1];
+  return t.replace(/[\\`~!@#$%^&*()+=\[{\]}|'<,.>?\/";:\s]/g, '');
+}
+
+async function lookupStore(raw) {
+  const code = cleanStoreCode(raw);
+  if (!code) return;
+  $('#storeCode').value = code;
+  const out = $('#storeOut');
+  out.innerHTML = loading;
+  try {
+    const j = await api('POST', '/pda/storeAssorted', { StoreCode: code });
+    if (!Array.isArray(j)) throw new Error((j && j.message) || 'Phản hồi không đúng dạng danh sách');
+    const html = j.map(loc => {
+      const det = Array.isArray(loc.Details) ? loc.Details : [];
+      return `<div class="loc">${esc(loc.Location || '(không có vị trí)')}</div>` + det.map(d =>
+        `<div class="item"><span>${esc(d.ItemName)}<br><small class="muted">${esc(d.ItemCode)}</small></span><span class="q">${Number(d.Quantity) || 0}</span></div>`).join('');
+    }).join('');
+    out.innerHTML = html || '<p class="muted">Không có dữ liệu ghép hàng</p>';
+  } catch (e) { out.innerHTML = errBox(e); }
+}
+
+// ---------- Vị trí DAS (location) ----------
+async function lookupDas(dateStr, raw) {
+  const code = cleanStoreCode(raw);
+  if (!code || !dateStr) return;
+  const [y, m, d] = dateStr.split('-');
+  const out = $('#dasOut');
+  out.innerHTML = loading;
+  try {
+    const j = await api('POST', '/pda/location', { StoreCode: code, Date: `${d}/${m}/${y}` });
+    if (!Array.isArray(j)) throw new Error((j && j.message) || 'Phản hồi không đúng dạng danh sách');
+    out.innerHTML = j.length ? j.map(r => {
+      const loc = String(r.Location || ''), ses = String(r.Session || '');
+      const line = loc.length === 6 ? loc.slice(0, 4) : loc, cell = loc.length === 6 ? loc.slice(4) : '';
+      return `<div class="card">${j.length > 1 ? `<div class="meta">Phiên ${esc(ses.slice(-4))}</div>` : ''}
+        <div class="name">Mã CH ${esc(code)}</div>
+        <div>Line: <b>${esc(line)}</b> · Vị trí: <b>${esc(cell)}</b></div></div>`;
+    }).join('') : '<p class="muted">Không có dữ liệu</p>';
+  } catch (e) { out.innerHTML = errBox(e); }
+}
+
+// ---------- Cài đặt ----------
+function loadSettings() { $('#setBase').value = S.base; $('#setEvery').value = String(S.every); }
+function saveSettings() {
+  S.base = $('#setBase').value.trim() || DEFAULT_BASE;
+  S.every = Number($('#setEvery').value) || 20;
+  store.set('base', S.base); store.set('every', S.every);
+  $('#setOut').textContent = 'Đã lưu.';
+  renderStatus(); schedule(); refresh();
+}
+async function testConnection() {
+  const out = $('#setOut');
+  const saved = S.base;
+  S.base = $('#setBase').value.trim() || DEFAULT_BASE;
+  out.textContent = 'Đang thử…';
+  const t0 = performance.now();
+  try {
+    const items = parseBulk(await api('GET', '/sftp/getAssortingPending'));
+    out.textContent = `OK: ${items.length} mã hàng, ${Math.round(performance.now() - t0)} ms`;
+  } catch (e) { out.textContent = 'Lỗi: ' + (e.message || e); }
+  S.base = saved;
+}
+
+// ---------- Chuyển tab ----------
+function showTab(t) {
+  S.tab = t; store.set('tab', t);
+  $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + t; v.classList.toggle('on', !v.hidden); });
+  $$('.rail-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  if (t === 'list' && (!S.updatedAt || Date.now() - S.updatedAt > S.every * 1000)) refresh();
+  if (t === 'move') $('#moveCode').focus();
+  if (t === 'store') $('#storeCode').focus();
+}
+
+// ---------- Khởi động ----------
+function init() {
+  $$('.rail-item').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  $('#btnRefresh').addEventListener('click', refresh);
+  $('#q').addEventListener('input', renderList);
+  $('#sort').addEventListener('change', renderList);
+  $('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.code); });
+  $('#dlgClose').addEventListener('click', () => $('#dlg').close());
+  $('#formMove').addEventListener('submit', e => { e.preventDefault(); lookupItem($('#moveCode').value); });
+  $('#formStore').addEventListener('submit', e => { e.preventDefault(); lookupStore($('#storeCode').value); });
+  $('#formDas').addEventListener('submit', e => { e.preventDefault(); lookupDas($('#dasDate').value, $('#dasStore').value); });
+  $('#btnSave').addEventListener('click', saveSettings);
+  $('#btnTest').addEventListener('click', testConnection);
+  $('#btnReset').addEventListener('click', () => { $('#setBase').value = DEFAULT_BASE; });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tab === 'list') { refresh(); schedule(); } });
+
+  const d = new Date();
+  $('#dasDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const apiOverride = new URLSearchParams(location.search).get('api'); // chỉ để thử, không lưu
+  if (apiOverride) S.base = apiOverride;
+  loadSettings();
+
+  const snap = store.get('snap', null);
+  if (snap && Array.isArray(snap.items)) {
+    S.items = snap.items; S.updatedAt = snap.at;
+    if (Date.now() - snap.at < FRESH_MS) S.prevMap = new Map(snap.items.map(i => [i.code, i]));
+  }
+  renderList(); renderStatus();
+  showTab(S.tab);
+  if (S.tab !== 'list') refresh();
+  schedule();
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+init();
