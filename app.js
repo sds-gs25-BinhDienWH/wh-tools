@@ -3,7 +3,12 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const LINES = ['A01','A02','A03','A04','A05','A06','A07','B08','B09','B10','B11','B12','B13','B14'];
-const DEFAULT_BASE = 'http://119.15.179.186:8081/api';
+// Địa chỉ proxy Apps Script (https://script.google.com/macros/s/.../exec): ghi MỘT LẦN ở đây,
+// mọi thiết bị mở web đều dùng chung, không ai phải nhập tay.
+const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyV5otbjq-5N00CMUl-7mbyC36Ztqf87C8IIzaIOiRjqwV_HGsKF7akzkFIjBcBO-VZNQ/exec';
+// Quản trị: mở web với ?admin=1 để hiện ô sửa địa chỉ API trong Cài đặt.
+const ADMIN = new URLSearchParams(location.search).get('admin') === '1';
+const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
 
@@ -13,7 +18,7 @@ const store = {
 };
 
 const S = {
-  base: store.get('base', DEFAULT_BASE),
+  base: LOCKED ? PROXY_URL : store.get('base', PROXY_URL),
   every: store.get('every', 20),
   tab: store.get('tab', 'list'),
   items: [], prevMap: null, flash: new Map(), done: [],
@@ -40,7 +45,8 @@ function netDone() {
 }
 
 async function api(method, path, body) {
-  if (mixedBlocked()) throw new Error('Trang https không gọi được địa chỉ http. Vào Cài đặt và dán địa chỉ proxy Apps Script.');
+  if (!S.base.trim()) throw new Error('Chưa cấu hình địa chỉ máy chủ. Vui lòng báo quản trị viên.');
+  if (mixedBlocked()) throw new Error('Trang https không gọi được địa chỉ http. Cần dùng địa chỉ proxy Apps Script (https).');
   const base = S.base.trim().replace(/\/+$/, '');
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 15000);
@@ -133,8 +139,12 @@ function renderStatus() {
   else if (S.updatedAt) el.textContent = 'Cập nhật ' + hhmmss(S.updatedAt) + ' · tự tải mỗi ' + S.every + ' giây';
   else el.textContent = 'Chưa có dữ liệu';
   const b = $('#banner');
-  b.hidden = !mixedBlocked();
-  b.textContent = 'Trang https không gọi được địa chỉ http của server kho. Vào Cài đặt và dán địa chỉ Web App của proxy Apps Script.';
+  const blocked = !S.base.trim() || mixedBlocked();
+  el.hidden = blocked;                      // đã có khung đỏ ở dưới thì không lặp lại dòng trạng thái
+  b.hidden = !blocked;
+  b.textContent = !S.base.trim()
+    ? 'Chưa cấu hình địa chỉ máy chủ. Vui lòng báo quản trị viên.'
+    : 'Trang https không gọi được địa chỉ http. Cần dùng địa chỉ proxy Apps Script (https).';
 }
 
 function linesGrid(q, flashIdx) {
@@ -254,18 +264,22 @@ async function lookupDas(dateStr, raw) {
 }
 
 // ---------- Cài đặt ----------
-function loadSettings() { $('#setBase').value = S.base; $('#setEvery').value = String(S.every); }
+function loadSettings() {
+  $('#adminBox').hidden = LOCKED;          // người dùng thường không thấy ô địa chỉ
+  $('#setBase').value = S.base;
+  $('#setEvery').value = String(S.every);
+}
 function saveSettings() {
-  S.base = $('#setBase').value.trim() || DEFAULT_BASE;
+  if (!LOCKED) { S.base = $('#setBase').value.trim() || PROXY_URL; store.set('base', S.base); }
   S.every = Number($('#setEvery').value) || 20;
-  store.set('base', S.base); store.set('every', S.every);
+  store.set('every', S.every);
   $('#setOut').textContent = 'Đã lưu.';
   renderStatus(); schedule(); refresh();
 }
 async function testConnection() {
   const out = $('#setOut');
   const saved = S.base;
-  S.base = $('#setBase').value.trim() || DEFAULT_BASE;
+  if (!LOCKED) S.base = $('#setBase').value.trim() || PROXY_URL;
   out.textContent = 'Đang thử…';
   const t0 = performance.now();
   try {
@@ -298,7 +312,7 @@ function init() {
   $('#formDas').addEventListener('submit', e => { e.preventDefault(); lookupDas($('#dasDate').value, $('#dasStore').value); });
   $('#btnSave').addEventListener('click', saveSettings);
   $('#btnTest').addEventListener('click', testConnection);
-  $('#btnReset').addEventListener('click', () => { $('#setBase').value = DEFAULT_BASE; });
+  $('#btnReset').addEventListener('click', () => { $('#setBase').value = PROXY_URL; });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tab === 'list') { refresh(); schedule(); } });
 
   const d = new Date();

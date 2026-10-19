@@ -79,11 +79,13 @@
       <section id="view-set" class="view" hidden>
         <h2>Cài đặt</h2>
         <div class="panel">
-          <label for="setBase" style="margin-top:0">Địa chỉ API</label>
-          <input id="setBase" autocomplete="off" spellcheck="false">
-          <p class="hint">Gọi thẳng server kho: <code>http://119.15.179.186:8081/api</code> (chỉ chạy khi mở trang bằng http hoặc localhost).<br>
-            Mở từ GitHub Pages (https): dán địa chỉ Web App của proxy Apps Script (<code>https://script.google.com/macros/s/…/exec</code>).</p>
-          <label for="setEvery">Tự cập nhật mỗi</label>
+          <div id="adminBox" hidden>
+            <label for="setBase" style="margin-top:0">Địa chỉ API (quản trị)</label>
+            <input id="setBase" autocomplete="off" spellcheck="false">
+            <p class="hint">Dán địa chỉ Web App của proxy Apps Script (<code>https://script.google.com/macros/s/…/exec</code>).
+              Để mọi máy tự dùng, ghi địa chỉ này vào <code>PROXY_URL</code> trong <code>app.js</code>.</p>
+          </div>
+          <label for="setEvery" style="margin-top:0">Tự cập nhật mỗi</label>
           <select id="setEvery" style="max-width:none;width:100%">
             <option value="10">10 giây</option>
             <option value="20">20 giây</option>
