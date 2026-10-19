@@ -1,6 +1,6 @@
 'use strict';
 // Network-first cho file của app; mất mạng thì dùng bản đã lưu. Không chạm vào request sang server khác.
-const CACHE = 'wh-v5';
+const CACHE = 'wh-v6';
 const SHELL = ['./', './index.html', './app.js', './style.css', './manifest.webmanifest', './icon.svg', './logo.svg',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
