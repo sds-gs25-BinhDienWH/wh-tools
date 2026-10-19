@@ -72,6 +72,7 @@ b{font-weight:800}
 .sugg{margin-top:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--card);overflow:hidden;box-shadow:var(--shadow)}
 .sugg .sg{display:block;width:100%;text-align:left;padding:10px 12px;border-bottom:1px solid var(--row-border)}
 .sugg .sg:last-child{border-bottom:0}
+.sugg .sg-note{padding:10px 12px;font-size:12px;font-weight:700;color:var(--muted)}
 .sugg .sg:active{background:var(--green-soft)}
 .sugg .sg b{display:block;font-size:13px;color:var(--heading)}
 .sugg .sg small{font-size:11px;color:var(--muted);font-weight:700}

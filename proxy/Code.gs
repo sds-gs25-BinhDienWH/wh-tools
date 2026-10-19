@@ -33,6 +33,17 @@ const LOG_ACTION = {
   'POST /pda/location': 'GHÉP PAXD',
 };
 
+/**
+ * Chạy hàm này MỘT LẦN trong trình chỉnh sửa (chọn "testSetup" ở ô chọn hàm > Chạy)
+ * để cấp quyền Google Sheet và kiểm tra cấu hình. Kết quả xem ở "Nhật ký thực thi".
+ */
+function testSetup() {
+  const n = Object.keys(empMap_(true)).length;
+  logSs_(); // kiểm tra file nhật ký mở được
+  console.log('OK: đọc được ' + n + ' nhân viên từ Google Sheet.');
+  return n;
+}
+
 function doGet() { return out({ ok: true, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -82,7 +93,9 @@ function fetchUpstream_(method, path, body, key, ttl) {
 }
 
 // ---------- Nhân viên ----------
-const normId_ = v => String(v == null ? '' : v).trim().toUpperCase();
+// Chuẩn hoá mã nhân viên. Thẻ quét ra "WK10600143" -> bỏ tiền tố WK còn "10600143".
+// Dùng cho cả mã quét lên và mã trong sheet nên hai bên luôn khớp.
+const normId_ = v => String(v == null ? '' : v).trim().toUpperCase().replace(/^WK[\s\-_:]*(?=\d)/, '');
 
 function login_(id) {
   const emp = findEmp_(id);

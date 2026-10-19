@@ -247,9 +247,12 @@ function setEmp(e) { S.emp = e ? { ...e, at: Date.now() } : null; sess.set(S.emp
 // Chỉ thao tác của người (chạm, quét, gõ) mới tính là còn làm việc; tự tải ngầm thì không
 function touchEmp() { if (S.emp) { S.emp.at = Date.now(); sess.set(S.emp); } }
 
+// Thẻ nhân viên quét ra dạng "WK10600143": bỏ tiền tố WK để khớp cột Employee ID trong sheet
+const cleanEmpId = s => String(s || '').trim().toUpperCase().replace(/^WK[\s\-_:]*(?=\d)/, '');
+
 async function doLoginEmp(raw) {
   hideSugg();
-  const id = raw.trim().toUpperCase();
+  const id = cleanEmpId(raw);
   if (!id) return;
   const out = $('#empOut');
   out.innerHTML = loading;
@@ -308,6 +311,13 @@ function applyMode() {
 
 const hideSugg = () => ['#empSugg', '#itemSugg'].forEach(s => { $(s).hidden = true; $(s).innerHTML = ''; });
 
+// Một dòng thông báo trong khung gợi ý (đang tìm / không có kết quả / lỗi)
+function suggNote(box, msg) {
+  box.innerHTML = `<div class="sg-note">${esc(msg)}</div>`;
+  box.hidden = false;
+  box.onclick = null;
+}
+
 // rows = [{ main, sub }]; pick(i) chạy khi bấm vào dòng thứ i
 function showSugg(box, rows, pick) {
   box.innerHTML = rows.map((r, i) => `<button type="button" class="sg" data-i="${i}"><b>${esc(r.main)}</b><small>${esc(r.sub)}</small></button>`).join('');
@@ -321,6 +331,7 @@ function suggestItems() {
   const q = fold($('#moveCode').value.trim());
   if (q.length < 2) { $('#itemSugg').hidden = true; return; }
   const rows = S.items.filter(i => fold(i.code).includes(q) || fold(i.name).includes(q)).slice(0, 8);
+  if (!rows.length) { suggNote($('#itemSugg'), S.items.length ? 'Không có mã hàng nào khớp trong danh sách đang chờ' : 'Chưa có danh sách hàng chờ để gợi ý'); return; }
   showSugg($('#itemSugg'), rows.map(i => ({ main: i.name, sub: i.code })), i => {
     hideSugg(); $('#moveCode').value = rows[i].code; lookupItem(rows[i].code);
   });
@@ -335,15 +346,22 @@ function suggestEmps() {
   if (q.length < 2) { $('#empSugg').hidden = true; return; }
   empSuggTimer = setTimeout(async () => {
     const seq = ++empSuggSeq;
+    const box = $('#empSugg');
     try {
       const base = baseOrThrow();
-      if (!isProxy(base)) return; // chạy thẳng server kho: không có sheet nhân viên
+      if (!isProxy(base)) { suggNote(box, 'Gợi ý tên chỉ có khi dùng proxy Apps Script.'); return; }
+      suggNote(box, 'Đang tìm…');
       const rows = await request(signal => proxyFetch(base, { action: 'suggest', q }, signal));
-      if (seq !== empSuggSeq || !Array.isArray(rows)) return; // đã có lần gõ mới hơn
-      showSugg($('#empSugg'), rows.map(r => ({ main: r.name, sub: 'Mã NV: ' + r.id })), i => {
+      if (seq !== empSuggSeq) return; // đã có lần gõ mới hơn
+      if (!Array.isArray(rows)) throw new Error('Proxy trả về sai dạng (chưa cập nhật bản mới?)');
+      if (!rows.length) { suggNote(box, 'Không thấy nhân viên nào khớp'); return; }
+      showSugg(box, rows.map(r => ({ main: r.name, sub: 'Mã NV: ' + r.id })), i => {
         hideSugg(); $('#empCode').value = rows[i].id; doLoginEmp(rows[i].id);
       });
-    } catch { /* gợi ý lỗi thì bỏ qua, vẫn nhập tay bình thường */ }
+    } catch (e) {
+      // Hiện rõ lý do (sai SHEET_ID, proxy chưa cập nhật, mất mạng...) thay vì im lặng; vẫn quét/nhập mã bình thường được
+      if (seq === empSuggSeq) suggNote(box, 'Không tải được gợi ý: ' + (e.message || e));
+    }
   }, 250);
 }
 
