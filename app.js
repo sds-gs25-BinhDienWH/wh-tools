@@ -11,17 +11,18 @@ const ADMIN = new URLSearchParams(location.search).get('admin') === '1';
 const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
-const IDLE_MS = 5 * 60000;   // PDA dùng chung: quá thời gian này không chạm/quét gì thì tự đăng xuất
+const IDLE_MS = 10 * 60000;  // PDA dùng chung: quá thời gian này không chạm/quét gì thì tự đăng xuất
 const ENABLED_TABS = ['list', 'move', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-// Nhân viên đang thao tác chỉ nhớ trong phiên (đóng tab/app là phải quét lại thẻ)
+// Nhân viên đang thao tác được nhớ trên máy: thoát app rồi vào lại ngay vẫn còn đăng nhập.
+// Hết phiên theo thời gian rảnh (IDLE_MS), không phải theo việc đóng app: quá hạn thì checkIdle() sẽ đăng xuất.
 const sess = {
-  get() { try { return JSON.parse(sessionStorage.getItem('emp')); } catch { return null; } },
-  set(v) { try { v ? sessionStorage.setItem('emp', JSON.stringify(v)) : sessionStorage.removeItem('emp'); } catch {} },
+  get() { try { return JSON.parse(localStorage.getItem('emp')); } catch { return null; } },
+  set(v) { try { v ? localStorage.setItem('emp', JSON.stringify(v)) : localStorage.removeItem('emp'); } catch {} },
 };
 
 const S = {
