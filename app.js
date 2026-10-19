@@ -285,6 +285,7 @@ function logout(reason, msg) {
   const e = S.emp;
   if (!e) return;
   sendLogout(e, reason);
+  S.work = null;
   setEmp(null);
   $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; $('#empCode').value = '';
   if (msg) toast(msg);
@@ -371,8 +372,10 @@ async function lookupItem(raw) {
   const code = raw.trim();
   if (!code) return;
   if (!S.emp) { renderEmp(); return; }
+  if (S.work && S.work.done.size) toast('Mã trước chưa bấm Hoàn thành nên chưa được ghi');
   const out = $('#moveOut');
   out.innerHTML = loading;
+  S.work = null;
   try {
     const j = await api('POST', '/pda/itemPending', { ItemCode: code });
     if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
@@ -381,13 +384,87 @@ async function lookupItem(raw) {
       const k = LINES.indexOf(String(d.Line || '').replace('-', ''));
       if (k >= 0) q[k] = Number(d.Quantity) || 0;
     }
-    out.innerHTML = `<div class="card"><div class="name">${esc(j.ItemName || 'Không rõ tên')}</div>
-      <div class="meta">${esc(code)}</div>${linesGrid(q)}
-      <div class="totals"><span class="zA">Khu A: ${zoneA({ q })}</span><span class="zB">Khu B: ${zoneB({ q })}</span><span>Tổng: ${sum(q)}</span></div></div>`;
+    // Bắt đầu tính giờ từ lúc quét mã (lúc có kết quả)
+    S.work = { code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
+    renderWork();
   } catch (e) {
     out.innerHTML = errBox(e);
   }
   $('#moveCode').value = ''; if (S.emp) $('#moveCode').focus();
+}
+
+// ---------- Làm việc với một mã hàng: chạm line đã xong để sáng lên, rồi bấm Hoàn thành ----------
+const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+
+function renderWork() {
+  const w = S.work, out = $('#moveOut');
+  if (!w) return;
+  const todo = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
+  const row = from => w.q.slice(from, from + 7).map((v, i) => {
+    const k = from + i, on = w.done.has(k);
+    if (v <= 0) return `<div class="cell zero"><small>${LINES[k]}</small><b>${v}</b></div>`;
+    return `<button type="button" class="cell pick ${on ? 'done' : ''}" data-k="${k}" aria-pressed="${on}"><small>${LINES[k]}</small><b>${v}</b></button>`;
+  }).join('');
+  if (!todo.length) {
+    out.innerHTML = `<div class="card"><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.code)}</div>
+      <p class="muted">Mã này hiện không còn hàng chờ ở line nào.</p></div>`;
+    S.work = null;
+    return;
+  }
+  out.innerHTML = `<div class="card work"><div class="name">${esc(w.name)}</div>
+    <div class="meta">${esc(w.code)} · Bắt đầu ${hhmmss(w.startedAt)} · <b id="workTimer">${mmss(Date.now() - w.startedAt)}</b></div>
+    <div class="grid">${row(0)}</div><div class="grid">${row(7)}</div>
+    <div class="totals"><span class="zA">Khu A: ${zoneA(w)}</span><span class="zB">Khu B: ${zoneB(w)}</span><span>Tổng: ${sum(w.q)}</span></div>
+    <p class="hint" style="margin:8px 0 0">Chạm vào line đã làm xong để đánh dấu.</p>
+    <div class="work-actions">
+      <button type="button" id="btnAll" class="ghost">Chọn hết</button>
+      <button type="button" id="btnDone" ${w.done.size ? '' : 'disabled'}>Hoàn thành (${w.done.size}/${todo.length})</button>
+    </div></div>`;
+}
+
+function toggleLine(k) {
+  const w = S.work;
+  if (!w || w.sending || !(w.q[k] > 0)) return;
+  w.done.has(k) ? w.done.delete(k) : w.done.add(k);
+  renderWork();
+}
+function selectAllLines() {
+  const w = S.work;
+  if (!w || w.sending) return;
+  const todo = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0);
+  todo.length === w.done.size ? w.done.clear() : todo.forEach(k => w.done.add(k)); // bấm lần nữa để bỏ chọn hết
+  renderWork();
+}
+
+async function completeWork() {
+  const w = S.work;
+  if (!w || w.sending || !w.done.size) return;
+  const endedAt = Date.now();
+  const pick = ks => ks.map(k => ({ l: LINES[k], q: w.q[k] }));
+  const all = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0);
+  const doneKs = all.filter(k => w.done.has(k)), restKs = all.filter(k => !w.done.has(k));
+  const btn = $('#btnDone');
+  w.sending = true; btn.disabled = true; btn.textContent = 'Đang ghi…';
+  try {
+    const base = baseOrThrow();
+    if (isProxy(base)) {
+      await request(signal => proxyFetch(base, { action: 'complete', emp: S.emp.id, itemCode: w.code, itemName: w.name,
+        startedAt: w.startedAt, endedAt, done: pick(doneKs), rest: pick(restKs) }, signal));
+    }
+    const out = $('#moveOut');
+    out.innerHTML = `<div class="card done-box"><div class="name">✓ Đã ghi hoàn thành</div>
+      <div class="meta">${esc(w.name)} · ${esc(w.code)}</div>
+      <div class="totals"><span>Mất <b>${mmss(endedAt - w.startedAt)}</b></span><span>${doneKs.length}/${all.length} line</span>${restKs.length ? '<span class="zB">Còn ' + restKs.length + ' line chưa xong</span>' : ''}</div>
+      ${isProxy(base) ? '' : '<p class="hint">Chế độ thử (không có proxy): chưa ghi vào sổ nhật ký.</p>'}</div>`;
+    S.work = null;
+    $('#moveCode').focus();
+  } catch (e) {
+    // Lỗi mạng/proxy: giữ nguyên các line đã đánh dấu để bấm lại, không mất công
+    w.sending = false;
+    if (/^NO_EMP/.test(e.message || '')) { logout('invalid', 'Phiên không hợp lệ, vui lòng đăng nhập lại'); return; }
+    renderWork();
+    toast('Chưa ghi được: ' + (e.message || e));
+  }
 }
 
 // ---------- Ghép hàng (storeAssorted) ----------
@@ -493,6 +570,14 @@ function init() {
   $('#formEmp').addEventListener('submit', e => { e.preventDefault(); doLoginEmp($('#empCode').value); });
   $('#btnSwitch').addEventListener('click', () => logout('manual'));
   $('#formMove').addEventListener('submit', e => { e.preventDefault(); lookupItem($('#moveCode').value); });
+  $('#moveOut').addEventListener('click', e => {
+    const cell = e.target.closest('.cell.pick');
+    if (cell) return toggleLine(Number(cell.dataset.k));
+    if (e.target.closest('#btnAll')) return selectAllLines();
+    if (e.target.closest('#btnDone')) return completeWork();
+  });
+  // Đồng hồ đếm thời gian của mã đang làm (chỉ cập nhật số, không vẽ lại cả khối)
+  setInterval(() => { const t = $('#workTimer'); if (t && S.work) t.textContent = mmss(Date.now() - S.work.startedAt); }, 1000);
   // PDA dùng chung: bỏ máy quá lâu thì tự đăng xuất, tránh người sau thao tác mà ghi nhầm tên người trước.
   // Chạm màn hình hoặc quét/gõ phím đều tính là còn làm việc (tự tải ngầm thì không).
   ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, touchEmp, true));

@@ -53,6 +53,7 @@ function doPost(e) {
     if (req.action === 'login') return out(login_(req.emp));
     if (req.action === 'logout') return out(logout_(req.emp, req.note));
     if (req.action === 'suggest') return out(suggestEmp_(req.q));
+    if (req.action === 'complete') return out(complete_(req));
 
     const method = String(req.method || 'GET').toUpperCase();
     const path = String(req.path || '');
@@ -108,6 +109,25 @@ function logout_(id, note) {
   const emp = findEmp_(id);
   if (emp) safeLog_([new Date(), emp.id, emp.name, 'ĐĂNG XUẤT', '', '', '', '', '', String(note || '').slice(0, 200)]);
   return { ok: true };
+}
+
+// Công nhân bấm "Hoàn thành" một mã hàng ở Điều hàng.
+// req = { emp, itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA), done:[{l,q}], rest:[{l,q}] }
+// done = các line đã xong, rest = các line còn hàng chờ nhưng chưa đánh dấu xong.
+function complete_(req) {
+  const emp = findEmp_(req.emp);
+  if (!emp) return { __error: 'NO_EMP: Chưa đăng nhập hoặc mã nhân viên không có trong danh sách.' };
+  const lst = function (x) { return Array.isArray(x) ? x.slice(0, 14) : []; };
+  const fmt = function (a) { return a.map(function (d) { return String(d.l).slice(0, 4) + '=' + (Number(d.q) || 0); }).join(', '); };
+  const done = lst(req.done), rest = lst(req.rest);
+  const start = Number(req.startedAt), end = Number(req.endedAt);
+  const ok = isFinite(start) && isFinite(end) && end >= start;
+  const sec = ok ? Math.round((end - start) / 1000) : '';
+  const qty = done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0);
+  const note = ('Line xong: ' + fmt(done) + (rest.length ? ' | Chưa xong: ' + fmt(rest) : '')).slice(0, 200);
+  safeLog_([new Date(), emp.id, emp.name, 'HOÀN THÀNH', String(req.itemCode || '').slice(0, 30), String(req.itemName || '').slice(0, 100),
+    rest.length ? 'XONG MỘT PHẦN' : 'XONG ĐỦ', '', '', note, ok ? new Date(start) : '', sec, qty]);
+  return { ok: true, seconds: sec };
 }
 
 // Gợi ý khi nhân viên nhập tay: khớp theo tên (không dấu) hoặc mã. Tối thiểu 2 ký tự, tối đa 8 kết quả.
@@ -172,6 +192,7 @@ function empMap_(force) {
 
 // ---------- Nhật ký ----------
 // Cột: Thời gian | Mã NV | Họ tên | Hành động | Mã hàng | Tên hàng | Kết quả | Chờ khu A | Chờ khu B | Ghi chú
+//      | Bắt đầu | Thời lượng (giây) | SL đã điều      (3 cột cuối chỉ có ở dòng HOÀN THÀNH)
 function logAction_(emp, action, body, r) {
   try {
     const itemCode = body && body.ItemCode ? String(body.ItemCode) : '';
@@ -208,9 +229,11 @@ function appendLog_(row) {
     let sh = book.getSheetByName(LOG_SHEET);
     if (!sh) {
       sh = book.insertSheet(LOG_SHEET);
-      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú']);
+      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú',
+        'Bắt đầu', 'Thời lượng (giây)', 'SL đã điều']);
       sh.setFrozenRows(1);
       sh.getRange('A:A').setNumberFormat('dd/MM/yyyy HH:mm:ss');
+      sh.getRange('K:K').setNumberFormat('dd/MM/yyyy HH:mm:ss');
       sh.getRange('B:B').setNumberFormat('@');
       sh.getRange('E:E').setNumberFormat('@');
     }
