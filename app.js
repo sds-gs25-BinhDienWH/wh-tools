@@ -11,7 +11,7 @@ const ADMIN = new URLSearchParams(location.search).get('admin') === '1';
 const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
-const IDLE_MS = 10 * 60000;  // quá thời gian này không tra mã nào thì tự đăng xuất nhân viên
+const IDLE_MS = 5 * 60000;   // PDA dùng chung: quá thời gian này không chạm/quét gì thì tự đăng xuất
 const ENABLED_TABS = ['list', 'move', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
 
 const store = {
@@ -26,6 +26,7 @@ const sess = {
 
 const S = {
   emp: sess.get(),
+  mode: store.get('inputMode', 'scan') === 'type' ? 'type' : 'scan', // scan = quét bằng PDA, type = nhập tay có gợi ý
   base: LOCKED ? PROXY_URL : store.get('base', PROXY_URL),
   every: [0, 30, 60, 120].includes(store.get('every', 60)) ? store.get('every', 60) : 60,
   tab: store.get('tab', 'list'),
@@ -62,13 +63,20 @@ function baseOrThrow() {
 const proxyFetch = (base, payload, signal) => fetch(base, { method: 'POST',
   headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal });
 
-async function api(method, path, body, emp) {
+// Mọi lệnh gọi đều kèm mã nhân viên đang đăng nhập; proxy kiểm tra và ghi log theo người đó
+async function api(method, path, body, emp = S.emp && S.emp.id) {
   const base = baseOrThrow();
-  return request(signal => {
-    if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null }, signal);
-    if (method === 'GET') return fetch(base + path, { signal });
-    return fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal });
-  });
+  try {
+    return await request(signal => {
+      if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null }, signal);
+      if (method === 'GET') return fetch(base + path, { signal });
+      return fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal });
+    });
+  } catch (e) {
+    // Proxy báo nhân viên không còn hợp lệ (vd bị xoá khỏi sheet): quay về màn hình đăng nhập
+    if (/^NO_EMP/.test(e.message || '')) logout('invalid', 'Phiên không hợp lệ, vui lòng đăng nhập lại');
+    throw e;
+  }
 }
 
 // Xác thực mã nhân viên với Google Sheet (qua proxy). Chạy thẳng server kho thì không có sheet nên cho qua để thử.
@@ -127,7 +135,7 @@ function applyDiff(items) {
 }
 
 async function refresh() {
-  if (S.busy) return;
+  if (S.busy || !S.emp) return;
   S.busy = true; renderStatus();
   try {
     const items = parseBulk(await api('GET', '/sftp/getAssortingPending'));
@@ -218,25 +226,29 @@ function showDetail(code) {
 const errBox = e => `<div class="err-box">${esc(e.message || e)}</div>`;
 const loading = '<p class="muted">Đang tải…</p>';
 
-// ---------- Nhân viên (quét thẻ trước khi điều hàng) ----------
+// ---------- Đăng nhập nhân viên (hỏi "ai đang làm việc" trước mọi chức năng) ----------
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2200);
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2600);
 }
 
+// Chưa đăng nhập: hiện màn hình đăng nhập phủ kín. Đã đăng nhập: hiện tên người làm ở thanh trên.
 function renderEmp() {
   const e = S.emp;
-  $('#empBox').hidden = !!e;
-  $('#empBar').hidden = !e;
-  $('#moveWork').hidden = !e;
+  $('#login').hidden = !!e;
+  $('#who').hidden = !e;
+  $('.page').inert = !e;
   if (e) { $('#empName').textContent = e.name; $('#empId').textContent = 'Mã NV: ' + e.id; }
-  if (S.tab === 'move') (e ? $('#moveCode') : $('#empCode')).focus();
+  const el = !e ? $('#empCode') : (S.tab === 'move' ? $('#moveCode') : null);
+  if (el) el.focus();
 }
 function setEmp(e) { S.emp = e ? { ...e, at: Date.now() } : null; sess.set(S.emp); renderEmp(); }
+// Chỉ thao tác của người (chạm, quét, gõ) mới tính là còn làm việc; tự tải ngầm thì không
 function touchEmp() { if (S.emp) { S.emp.at = Date.now(); sess.set(S.emp); } }
 
 async function doLoginEmp(raw) {
+  hideSugg();
   const id = raw.trim().toUpperCase();
   if (!id) return;
   const out = $('#empOut');
@@ -244,22 +256,107 @@ async function doLoginEmp(raw) {
   try {
     const r = await loginEmp(id);
     out.innerHTML = '';
-    setEmp({ id: r.id, name: r.name });
     $('#moveOut').innerHTML = '';
+    setEmp({ id: r.id, name: r.name });
+    toast('Xin chào ' + r.name);
+    refresh(); schedule();
   } catch (e) { out.innerHTML = errBox(e); }
   $('#empCode').value = '';
 }
 
+// Ghi nhận đăng xuất lên proxy (không chờ, không báo lỗi: lỡ mất mạng vẫn đăng xuất được trên máy)
+function sendLogout(emp, reason) {
+  try {
+    const base = baseOrThrow();
+    if (!isProxy(base) || reason === 'invalid') return;
+    const note = reason === 'idle'
+      ? `Hết phiên (không thao tác ${IDLE_MS / 60000} phút), hoạt động cuối ${hhmmss(emp.at)}`
+      : 'Đăng xuất thủ công';
+    fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
+      body: JSON.stringify({ action: 'logout', emp: emp.id, note }) }).catch(() => {});
+  } catch { /* bỏ qua */ }
+}
+
+// reason: 'manual' (bấm Đổi người) | 'idle' (hết phiên) | 'invalid' (proxy không nhận mã này nữa)
+function logout(reason, msg) {
+  const e = S.emp;
+  if (!e) return;
+  sendLogout(e, reason);
+  setEmp(null);
+  $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; $('#empCode').value = '';
+  if (msg) toast(msg);
+}
+function checkIdle() {
+  if (S.emp && Date.now() - S.emp.at > IDLE_MS) logout('idle', 'Hết phiên, vui lòng đăng nhập lại');
+}
+
+// ---------- Cách nhập: Quét (PDA) / Nhập tay có gợi ý ----------
+function applyMode() {
+  const scan = S.mode === 'scan';
+  $$('.seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  // Chế độ quét: không bật bàn phím ảo, nút quét của PDA đẩy mã thẳng vào ô
+  [$('#empCode'), $('#moveCode')].forEach(el => el.setAttribute('inputmode', scan ? 'none' : 'text'));
+  $('#empCode').placeholder = scan ? 'Bấm nút quét, quét thẻ nhân viên' : 'Gõ tên hoặc mã nhân viên';
+  $('#moveCode').placeholder = scan ? 'Bấm nút quét, quét mã hàng' : 'Gõ mã hoặc tên hàng';
+  $('#empHint').textContent = scan
+    ? 'Bấm nút quét của PDA rồi quét thẻ nhân viên đang đeo. Mọi thao tác sau đó được ghi lại theo tên bạn.'
+    : 'Gõ vài chữ của tên hoặc mã, bấm vào gợi ý để chọn. Mọi thao tác sau đó được ghi lại theo tên bạn.';
+  hideSugg();
+  const el = !S.emp ? $('#empCode') : (S.tab === 'move' ? $('#moveCode') : null);
+  if (el) { el.blur(); el.focus(); }
+}
+
+const hideSugg = () => ['#empSugg', '#itemSugg'].forEach(s => { $(s).hidden = true; $(s).innerHTML = ''; });
+
+// rows = [{ main, sub }]; pick(i) chạy khi bấm vào dòng thứ i
+function showSugg(box, rows, pick) {
+  box.innerHTML = rows.map((r, i) => `<button type="button" class="sg" data-i="${i}"><b>${esc(r.main)}</b><small>${esc(r.sub)}</small></button>`).join('');
+  box.hidden = !rows.length;
+  box.onclick = e => { const b = e.target.closest('.sg'); if (b) pick(Number(b.dataset.i)); };
+}
+
+// Gợi ý mã hàng: lấy từ danh sách hàng đang chờ (đã tải ở tab Hàng chờ)
+function suggestItems() {
+  if (S.mode !== 'type') return;
+  const q = fold($('#moveCode').value.trim());
+  if (q.length < 2) { $('#itemSugg').hidden = true; return; }
+  const rows = S.items.filter(i => fold(i.code).includes(q) || fold(i.name).includes(q)).slice(0, 8);
+  showSugg($('#itemSugg'), rows.map(i => ({ main: i.name, sub: i.code })), i => {
+    hideSugg(); $('#moveCode').value = rows[i].code; lookupItem(rows[i].code);
+  });
+}
+
+// Gợi ý nhân viên: hỏi proxy (đọc từ Google Sheet). Chậm tay 250ms để không gọi mỗi phím
+let empSuggSeq = 0, empSuggTimer = null;
+function suggestEmps() {
+  clearTimeout(empSuggTimer);
+  if (S.mode !== 'type') return;
+  const q = $('#empCode').value.trim();
+  if (q.length < 2) { $('#empSugg').hidden = true; return; }
+  empSuggTimer = setTimeout(async () => {
+    const seq = ++empSuggSeq;
+    try {
+      const base = baseOrThrow();
+      if (!isProxy(base)) return; // chạy thẳng server kho: không có sheet nhân viên
+      const rows = await request(signal => proxyFetch(base, { action: 'suggest', q }, signal));
+      if (seq !== empSuggSeq || !Array.isArray(rows)) return; // đã có lần gõ mới hơn
+      showSugg($('#empSugg'), rows.map(r => ({ main: r.name, sub: 'Mã NV: ' + r.id })), i => {
+        hideSugg(); $('#empCode').value = rows[i].id; doLoginEmp(rows[i].id);
+      });
+    } catch { /* gợi ý lỗi thì bỏ qua, vẫn nhập tay bình thường */ }
+  }, 250);
+}
+
 // ---------- Điều hàng (itemPending) ----------
 async function lookupItem(raw) {
+  hideSugg();
   const code = raw.trim();
   if (!code) return;
   if (!S.emp) { renderEmp(); return; }
   const out = $('#moveOut');
   out.innerHTML = loading;
   try {
-    const j = await api('POST', '/pda/itemPending', { ItemCode: code }, S.emp.id);
-    touchEmp();
+    const j = await api('POST', '/pda/itemPending', { ItemCode: code });
     if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
     const q = LINES.map(() => 0);
     for (const d of j.Details) {
@@ -270,10 +367,9 @@ async function lookupItem(raw) {
       <div class="meta">${esc(code)}</div>${linesGrid(q)}
       <div class="totals"><span class="zA">Khu A: ${zoneA({ q })}</span><span class="zB">Khu B: ${zoneB({ q })}</span><span>Tổng: ${sum(q)}</span></div></div>`;
   } catch (e) {
-    if (/^NO_EMP/.test(e.message || '')) { setEmp(null); out.innerHTML = ''; $('#empOut').innerHTML = errBox('Phiên nhân viên không hợp lệ, vui lòng quét lại thẻ.'); return; }
     out.innerHTML = errBox(e);
   }
-  $('#moveCode').value = ''; $('#moveCode').focus();
+  $('#moveCode').value = ''; if (S.emp) $('#moveCode').focus();
 }
 
 // ---------- Ghép hàng (storeAssorted) ----------
@@ -357,7 +453,11 @@ function showTab(t) {
   $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + t; v.classList.toggle('on', !v.hidden); });
   $$('.rail-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   if (t === 'list' && (!S.updatedAt || (S.every > 0 && Date.now() - S.updatedAt > S.every * 1000))) refresh();
-  if (t === 'move') renderEmp();
+  if (t === 'move') {
+    renderEmp();
+    // Gợi ý mã hàng cần danh sách hàng chờ: tải nếu chưa có hoặc đã cũ
+    if (!S.items.length || !S.updatedAt || Date.now() - S.updatedAt > 120000) refresh();
+  }
 }
 
 // ---------- Khởi động ----------
@@ -368,18 +468,26 @@ function init() {
   $('#sort').addEventListener('change', renderList);
   $('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.code); });
   $('#dlgClose').addEventListener('click', () => $('#dlg').close());
+  $$('.seg button').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('inputMode', S.mode); applyMode(); }));
+  $('#empCode').addEventListener('input', suggestEmps);
+  $('#moveCode').addEventListener('input', suggestItems);
+  document.addEventListener('click', e => { if (!e.target.closest('.sugg, #empCode, #moveCode')) hideSugg(); });
   $('#formEmp').addEventListener('submit', e => { e.preventDefault(); doLoginEmp($('#empCode').value); });
-  $('#btnSwitch').addEventListener('click', () => { setEmp(null); $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; });
+  $('#btnSwitch').addEventListener('click', () => logout('manual'));
   $('#formMove').addEventListener('submit', e => { e.preventDefault(); lookupItem($('#moveCode').value); });
-  // Tự đăng xuất nhân viên nếu bỏ máy quá lâu, tránh người sau tra mã mà ghi nhầm tên người trước
-  setInterval(() => { if (S.emp && Date.now() - S.emp.at > IDLE_MS) { setEmp(null); toast('Hết phiên, vui lòng quét lại thẻ nhân viên'); } }, 15000);
+  // PDA dùng chung: bỏ máy quá lâu thì tự đăng xuất, tránh người sau thao tác mà ghi nhầm tên người trước.
+  // Chạm màn hình hoặc quét/gõ phím đều tính là còn làm việc (tự tải ngầm thì không).
+  ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, touchEmp, true));
+  setInterval(checkIdle, 15000);
   $('#formStore').addEventListener('submit', e => { e.preventDefault(); lookupStore($('#storeCode').value); });
   $('#formDas').addEventListener('submit', e => { e.preventDefault(); lookupDas($('#dasDate').value, $('#dasStore').value); });
   $('#btnSave').addEventListener('click', saveSettings);
   $('#btnTest').addEventListener('click', testConnection);
   $('#btnReset').addEventListener('click', () => { $('#setBase').value = PROXY_URL; });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && S.tab === 'list' && (S.every > 0 || !S.updatedAt)) { refresh(); schedule(); }
+    if (document.hidden) return;
+    checkIdle(); // máy ngủ/tắt màn hình rồi bật lại: kiểm tra hết phiên ngay
+    if (S.tab === 'list' && (S.every > 0 || !S.updatedAt)) { refresh(); schedule(); }
   });
 
   const d = new Date();
@@ -387,6 +495,7 @@ function init() {
   const apiOverride = new URLSearchParams(location.search).get('api'); // chỉ để thử, không lưu
   if (apiOverride) S.base = apiOverride;
   loadSettings();
+  applyMode();
 
   const snap = store.get('snap', null);
   if (snap && Array.isArray(snap.items)) {
@@ -394,6 +503,8 @@ function init() {
     if (Date.now() - snap.at < FRESH_MS) S.prevMap = new Map(snap.items.map(i => [i.code, i]));
   }
   renderList(); renderStatus();
+  checkIdle();      // phiên cũ còn lưu nhưng đã quá hạn thì đăng xuất (và ghi log) ngay
+  renderEmp();      // chưa đăng nhập: hiện màn hình đăng nhập
   showTab(ENABLED_TABS.includes(S.tab) ? S.tab : 'list');
   if (S.tab !== 'list') refresh();
   schedule();
