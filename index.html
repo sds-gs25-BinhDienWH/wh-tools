@@ -47,16 +47,35 @@
       </section>
 
       <section id="view-move" class="view" hidden>
-        <h2>Di chuyển hàng</h2>
-        <form id="formMove" class="row">
-          <input id="moveCode" inputmode="numeric" placeholder="Quét hoặc nhập mã hàng" autocomplete="off">
-          <button type="submit">Tra</button>
-        </form>
-        <div id="moveOut" style="margin-top:12px"></div>
+        <h2>Điều hàng</h2>
+
+        <!-- Bước 1: quét thẻ nhân viên -->
+        <div id="empBox" class="panel">
+          <label for="empCode" style="margin-top:0">Quét thẻ nhân viên</label>
+          <form id="formEmp" class="row">
+            <input id="empCode" placeholder="Mã nhân viên (Employee ID)" autocomplete="off" autocapitalize="characters">
+            <button type="submit">Xác nhận</button>
+          </form>
+          <p class="hint">Cần quét thẻ trước khi tra mã hàng. Mỗi lần tra sẽ được ghi lại theo tên bạn.</p>
+        </div>
+        <div id="empOut" style="margin-top:10px"></div>
+
+        <!-- Bước 2: quét mã hàng -->
+        <div id="empBar" class="empbar" hidden>
+          <div><b id="empName"></b><small id="empId"></small></div>
+          <button id="btnSwitch" type="button" class="ghost">Đổi người</button>
+        </div>
+        <div id="moveWork" hidden>
+          <form id="formMove" class="row">
+            <input id="moveCode" inputmode="numeric" placeholder="Quét hoặc nhập mã hàng" autocomplete="off">
+            <button type="submit">Tra</button>
+          </form>
+          <div id="moveOut" style="margin-top:12px"></div>
+        </div>
       </section>
 
       <section id="view-store" class="view" hidden>
-        <h2>Ghép hàng theo cửa hàng</h2>
+        <h2>Kiểm hàng theo cửa hàng</h2>
         <form id="formStore" class="row">
           <input id="storeCode" placeholder="Quét hoặc nhập mã cửa hàng" autocomplete="off">
           <button type="submit">Tra</button>
@@ -65,7 +84,7 @@
       </section>
 
       <section id="view-das" class="view" hidden>
-        <h2>Vị trí phân loại (DAS)</h2>
+        <h2>Ghép hàng PAXD (vị trí DAS)</h2>
         <form id="formDas" class="stack">
           <input id="dasDate" type="date">
           <div class="row">
@@ -87,10 +106,10 @@
           </div>
           <label for="setEvery" style="margin-top:0">Tự cập nhật mỗi</label>
           <select id="setEvery" style="max-width:none;width:100%">
-            <option value="10">10 giây</option>
-            <option value="20">20 giây</option>
+            <option value="0">Không tự tải (bấm Tải lại)</option>
             <option value="30">30 giây</option>
             <option value="60">60 giây</option>
+            <option value="120">2 phút</option>
           </select>
           <div class="row" style="margin-top:14px">
             <button id="btnSave" type="button">Lưu</button>
@@ -111,15 +130,15 @@
     </div>
     <div class="rail-item" data-tab="move">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
-      <span>Di chuyển</span>
+      <span>Điều hàng</span>
     </div>
-    <div class="rail-item" data-tab="store">
+    <div class="rail-item disabled" data-tab="store">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6"/></svg>
-      <span>Ghép hàng</span>
+      <span>Kiểm hàng</span>
     </div>
-    <div class="rail-item" data-tab="das">
+    <div class="rail-item disabled" data-tab="das">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-      <span>DAS</span>
+      <span>Ghép PAXD</span>
     </div>
     <div class="rail-item" data-tab="set">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -127,6 +146,8 @@
     </div>
   </div>
 </div>
+
+<div id="toast" class="toast" hidden></div>
 
 <dialog id="dlg">
   <div id="dlgBody"></div>

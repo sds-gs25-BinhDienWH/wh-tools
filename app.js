@@ -11,15 +11,23 @@ const ADMIN = new URLSearchParams(location.search).get('admin') === '1';
 const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
+const IDLE_MS = 10 * 60000;  // quá thời gian này không tra mã nào thì tự đăng xuất nhân viên
+const ENABLED_TABS = ['list', 'move', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
+// Nhân viên đang thao tác chỉ nhớ trong phiên (đóng tab/app là phải quét lại thẻ)
+const sess = {
+  get() { try { return JSON.parse(sessionStorage.getItem('emp')); } catch { return null; } },
+  set(v) { try { v ? sessionStorage.setItem('emp', JSON.stringify(v)) : sessionStorage.removeItem('emp'); } catch {} },
+};
 
 const S = {
+  emp: sess.get(),
   base: LOCKED ? PROXY_URL : store.get('base', PROXY_URL),
-  every: store.get('every', 20),
+  every: [0, 30, 60, 120].includes(store.get('every', 60)) ? store.get('every', 60) : 60,
   tab: store.get('tab', 'list'),
   items: [], prevMap: null, flash: new Map(), done: [],
   updatedAt: null, busy: false, error: null, timer: null,
@@ -44,25 +52,38 @@ function netDone() {
   if (netPending === 0) { clearTimeout(netTimer); $('#netBar').classList.remove('on'); }
 }
 
-async function api(method, path, body) {
+function baseOrThrow() {
   if (!S.base.trim()) throw new Error('Chưa cấu hình địa chỉ máy chủ. Vui lòng báo quản trị viên.');
   if (mixedBlocked()) throw new Error('Trang https không gọi được địa chỉ http. Cần dùng địa chỉ proxy Apps Script (https).');
-  const base = S.base.trim().replace(/\/+$/, '');
+  return S.base.trim().replace(/\/+$/, '');
+}
+
+// Với proxy: gửi text/plain để tránh preflight CORS; proxy tự gọi server kho và ghi log nhân viên
+const proxyFetch = (base, payload, signal) => fetch(base, { method: 'POST',
+  headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal });
+
+async function api(method, path, body, emp) {
+  const base = baseOrThrow();
+  return request(signal => {
+    if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null }, signal);
+    if (method === 'GET') return fetch(base + path, { signal });
+    return fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal });
+  });
+}
+
+// Xác thực mã nhân viên với Google Sheet (qua proxy). Chạy thẳng server kho thì không có sheet nên cho qua để thử.
+async function loginEmp(id) {
+  const base = baseOrThrow();
+  if (!isProxy(base)) return { id, name: id + ' (thử nghiệm, không ghi log)' };
+  return request(signal => proxyFetch(base, { action: 'login', emp: id }, signal));
+}
+
+async function request(doFetch) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 15000);
   netStart();
   try {
-    let res;
-    if (isProxy(base)) {
-      // text/plain để tránh preflight CORS; proxy tự gọi server kho
-      res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ method, path, body: body || null }), signal: ctl.signal });
-    } else if (method === 'GET') {
-      res = await fetch(base + path, { signal: ctl.signal });
-    } else {
-      res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}), signal: ctl.signal });
-    }
+    const res = await doFetch(ctl.signal);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data && data.__error) throw new Error(data.__error);
@@ -120,10 +141,12 @@ async function refresh() {
   }
 }
 
+// every = 0 nghĩa là chỉ tải khi bấm nút "Tải lại". Không tự tải khi đang xem chi tiết một mã.
 function schedule() {
   clearTimeout(S.timer);
+  if (S.every <= 0) return;
   S.timer = setTimeout(async () => {
-    if (!document.hidden && S.tab === 'list') await refresh();
+    if (!document.hidden && S.tab === 'list' && !$('#dlg').open) await refresh();
     schedule();
   }, S.every * 1000);
 }
@@ -136,7 +159,7 @@ function renderStatus() {
   $('#btnRefresh').classList.toggle('spinning', S.busy);
   if (S.busy) el.textContent = 'Đang tải…';
   else if (S.error) el.textContent = 'Lỗi: ' + S.error + (S.updatedAt ? ' · dữ liệu lúc ' + hhmmss(S.updatedAt) : '');
-  else if (S.updatedAt) el.textContent = 'Cập nhật ' + hhmmss(S.updatedAt) + ' · tự tải mỗi ' + S.every + ' giây';
+  else if (S.updatedAt) el.textContent = 'Cập nhật ' + hhmmss(S.updatedAt) + (S.every > 0 ? ' · tự tải mỗi ' + S.every + ' giây' : ' · bấm "Tải lại" để cập nhật');
   else el.textContent = 'Chưa có dữ liệu';
   const b = $('#banner');
   const blocked = !S.base.trim() || mixedBlocked();
@@ -195,14 +218,48 @@ function showDetail(code) {
 const errBox = e => `<div class="err-box">${esc(e.message || e)}</div>`;
 const loading = '<p class="muted">Đang tải…</p>';
 
-// ---------- Di chuyển hàng (itemPending) ----------
+// ---------- Nhân viên (quét thẻ trước khi điều hàng) ----------
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2200);
+}
+
+function renderEmp() {
+  const e = S.emp;
+  $('#empBox').hidden = !!e;
+  $('#empBar').hidden = !e;
+  $('#moveWork').hidden = !e;
+  if (e) { $('#empName').textContent = e.name; $('#empId').textContent = 'Mã NV: ' + e.id; }
+  if (S.tab === 'move') (e ? $('#moveCode') : $('#empCode')).focus();
+}
+function setEmp(e) { S.emp = e ? { ...e, at: Date.now() } : null; sess.set(S.emp); renderEmp(); }
+function touchEmp() { if (S.emp) { S.emp.at = Date.now(); sess.set(S.emp); } }
+
+async function doLoginEmp(raw) {
+  const id = raw.trim().toUpperCase();
+  if (!id) return;
+  const out = $('#empOut');
+  out.innerHTML = loading;
+  try {
+    const r = await loginEmp(id);
+    out.innerHTML = '';
+    setEmp({ id: r.id, name: r.name });
+    $('#moveOut').innerHTML = '';
+  } catch (e) { out.innerHTML = errBox(e); }
+  $('#empCode').value = '';
+}
+
+// ---------- Điều hàng (itemPending) ----------
 async function lookupItem(raw) {
   const code = raw.trim();
   if (!code) return;
+  if (!S.emp) { renderEmp(); return; }
   const out = $('#moveOut');
   out.innerHTML = loading;
   try {
-    const j = await api('POST', '/pda/itemPending', { ItemCode: code });
+    const j = await api('POST', '/pda/itemPending', { ItemCode: code }, S.emp.id);
+    touchEmp();
     if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
     const q = LINES.map(() => 0);
     for (const d of j.Details) {
@@ -212,7 +269,10 @@ async function lookupItem(raw) {
     out.innerHTML = `<div class="card"><div class="name">${esc(j.ItemName || 'Không rõ tên')}</div>
       <div class="meta">${esc(code)}</div>${linesGrid(q)}
       <div class="totals"><span class="zA">Khu A: ${zoneA({ q })}</span><span class="zB">Khu B: ${zoneB({ q })}</span><span>Tổng: ${sum(q)}</span></div></div>`;
-  } catch (e) { out.innerHTML = errBox(e); }
+  } catch (e) {
+    if (/^NO_EMP/.test(e.message || '')) { setEmp(null); out.innerHTML = ''; $('#empOut').innerHTML = errBox('Phiên nhân viên không hợp lệ, vui lòng quét lại thẻ.'); return; }
+    out.innerHTML = errBox(e);
+  }
   $('#moveCode').value = ''; $('#moveCode').focus();
 }
 
@@ -271,7 +331,8 @@ function loadSettings() {
 }
 function saveSettings() {
   if (!LOCKED) { S.base = $('#setBase').value.trim() || PROXY_URL; store.set('base', S.base); }
-  S.every = Number($('#setEvery').value) || 20;
+  const ev = Number($('#setEvery').value);
+  S.every = [0, 30, 60, 120].includes(ev) ? ev : 60;
   store.set('every', S.every);
   $('#setOut').textContent = 'Đã lưu.';
   renderStatus(); schedule(); refresh();
@@ -291,12 +352,12 @@ async function testConnection() {
 
 // ---------- Chuyển tab ----------
 function showTab(t) {
+  if (!ENABLED_TABS.includes(t)) { toast('Chức năng này tạm khoá'); return; }
   S.tab = t; store.set('tab', t);
   $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + t; v.classList.toggle('on', !v.hidden); });
   $$('.rail-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  if (t === 'list' && (!S.updatedAt || Date.now() - S.updatedAt > S.every * 1000)) refresh();
-  if (t === 'move') $('#moveCode').focus();
-  if (t === 'store') $('#storeCode').focus();
+  if (t === 'list' && (!S.updatedAt || (S.every > 0 && Date.now() - S.updatedAt > S.every * 1000))) refresh();
+  if (t === 'move') renderEmp();
 }
 
 // ---------- Khởi động ----------
@@ -307,13 +368,19 @@ function init() {
   $('#sort').addEventListener('change', renderList);
   $('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.code); });
   $('#dlgClose').addEventListener('click', () => $('#dlg').close());
+  $('#formEmp').addEventListener('submit', e => { e.preventDefault(); doLoginEmp($('#empCode').value); });
+  $('#btnSwitch').addEventListener('click', () => { setEmp(null); $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; });
   $('#formMove').addEventListener('submit', e => { e.preventDefault(); lookupItem($('#moveCode').value); });
+  // Tự đăng xuất nhân viên nếu bỏ máy quá lâu, tránh người sau tra mã mà ghi nhầm tên người trước
+  setInterval(() => { if (S.emp && Date.now() - S.emp.at > IDLE_MS) { setEmp(null); toast('Hết phiên, vui lòng quét lại thẻ nhân viên'); } }, 15000);
   $('#formStore').addEventListener('submit', e => { e.preventDefault(); lookupStore($('#storeCode').value); });
   $('#formDas').addEventListener('submit', e => { e.preventDefault(); lookupDas($('#dasDate').value, $('#dasStore').value); });
   $('#btnSave').addEventListener('click', saveSettings);
   $('#btnTest').addEventListener('click', testConnection);
   $('#btnReset').addEventListener('click', () => { $('#setBase').value = PROXY_URL; });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.tab === 'list') { refresh(); schedule(); } });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && S.tab === 'list' && (S.every > 0 || !S.updatedAt)) { refresh(); schedule(); }
+  });
 
   const d = new Date();
   $('#dasDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -327,7 +394,7 @@ function init() {
     if (Date.now() - snap.at < FRESH_MS) S.prevMap = new Map(snap.items.map(i => [i.code, i]));
   }
   renderList(); renderStatus();
-  showTab(S.tab);
+  showTab(ENABLED_TABS.includes(S.tab) ? S.tab : 'list');
   if (S.tab !== 'list') refresh();
   schedule();
 
