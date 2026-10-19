@@ -154,26 +154,43 @@ code{background:var(--bg);border:1px solid var(--border);border-radius:4px;paddi
 .cell.zero b{color:var(--muted);font-weight:400}
 .totals{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0;font-size:13px}
 
-/* Điều hàng: chạm line đã xong để sáng lên, rồi bấm Hoàn thành */
-.card.work{cursor:default}
-.work .grid{gap:6px}
-.cell.pick{font:inherit;color:inherit;cursor:pointer;padding:10px 0;border-width:1.5px;border-color:var(--za);background:var(--card);
+/* Điều hàng: màn hình làm việc phủ kín. Chạm line đã xong để sáng lên, rồi bấm Hoàn thành */
+.workscreen{position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;background:var(--bg)}
+.workscreen[hidden]{display:none}
+.ws-top{height:58px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;background:var(--navy);color:#fff}
+.ws-top button{height:40px;padding:0 14px;border:1.5px solid rgba(255,255,255,.45);border-radius:10px;color:#fff;font-size:14px;font-weight:800}
+/* thanh tô dần khi đang giữ nút / ô (bỏ chọn một line, huỷ mã) */
+@keyframes holdfill{to{background-size:100% 100%}}
+.ws-top #wsCancel{background-image:linear-gradient(var(--red),var(--red));background-repeat:no-repeat;background-size:0% 100%;user-select:none;-webkit-user-select:none}
+.ws-top #wsCancel.holding{animation:holdfill var(--hold,2s) linear forwards}
+.ws-cell.done.holding{background-image:linear-gradient(var(--red),var(--red));background-repeat:no-repeat;background-size:0% 100%;
+  animation:holdfill var(--hold,1.5s) linear forwards}
+.ws-time{font-size:12px;opacity:.9;text-align:right}
+.ws-time b{display:block;font-size:22px;line-height:1;font-variant-numeric:tabular-nums}
+.ws-body{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch}
+.ws-name{font-size:19px;font-weight:800;line-height:1.3;color:var(--heading)}
+.ws-meta{font-size:12px;color:var(--muted);margin:4px 0 6px}
+.ws-zone{display:flex;justify-content:space-between;align-items:baseline;margin:16px 0 8px;font-size:15px;font-weight:800}
+.ws-zone.zA{color:var(--za)} .ws-zone.zB{color:var(--zb)}
+.ws-zone span:last-child{font-size:20px}
+.ws-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:10px}
+.ws-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:84px;padding:6px 0;
+  border:2.5px solid var(--za);border-radius:var(--radius);background:var(--card);color:var(--ink);font:inherit;
   transition:background-color .12s ease,border-color .12s ease,transform .08s ease}
-.cell.pick small{font-size:10px}
-.cell.pick b{font-size:19px}
-.cell.pick:active{transform:scale(.94)}
-.cell.pick.done{background:var(--cyan-deep);border-color:var(--cyan-deep);color:#fff;box-shadow:0 0 0 3px rgba(0,210,160,.28)}
-.cell.pick.done small{color:#fff;opacity:.9}
-.cell.pick.done b::after{content:" ✓";font-size:13px}
-.work .cell.zero{opacity:.45;padding:10px 0}
-.work-actions{display:flex;gap:8px;margin-top:12px}
-.work-actions button{height:52px;border-radius:var(--radius-sm);font-size:15px;font-weight:800}
-.work-actions #btnDone{flex:1;background:var(--navy);color:#fff;box-shadow:var(--shadow)}
-.work-actions #btnDone:disabled{opacity:.4;box-shadow:none}
-.work-actions #btnAll{flex:0 0 auto;padding:0 16px}
-.card.done-box{cursor:default;border-left:4px solid var(--cyan-deep);background:var(--green-soft)}
+.ws-cell.zB{border-color:var(--zb)}
+.ws-cell small{font-size:12px;font-weight:800;color:var(--muted)}
+.ws-cell b{font-size:30px;line-height:1.1}
+.ws-cell{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.ws-cell:active{transform:scale(.94)}
+.ws-cell.done{background:var(--cyan-deep);border-color:var(--cyan-deep);color:#fff;box-shadow:0 0 0 4px rgba(0,210,160,.3)}
+.ws-cell.done small{color:#fff;opacity:.9}
+.ws-cell.done b::after{content:" ✓";font-size:20px}
+.ws-actions{flex:none;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--border)}
+.ws-actions button{height:62px;border-radius:var(--radius);font-size:17px;font-weight:800}
+.ws-actions #btnAll{flex:0 0 auto;padding:0 18px}
+.ws-actions #btnDone{flex:1;background:var(--navy);color:#fff;box-shadow:var(--shadow)}
+.ws-actions #btnDone:disabled{opacity:.4;box-shadow:none}.card.done-box{cursor:default;border-left:4px solid var(--cyan-deep);background:var(--green-soft)}
 .card.done-box .name{color:var(--cyan-deep)}
-#workTimer{font-variant-numeric:tabular-nums;color:var(--heading)}
 
 .done{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin:0 0 10px;font-size:12px}
 .done summary{font-weight:800;cursor:pointer}

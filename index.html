@@ -160,6 +160,19 @@
   </div>
 </div>
 
+<!-- Màn hình làm việc với một mã hàng: phủ kín, đóng khi Hoàn thành hoặc Quay về -->
+<div id="workScreen" class="workscreen" hidden>
+  <div class="ws-top">
+    <button id="wsCancel" type="button">Huỷ mã (giữ)</button>
+    <div class="ws-time">Thời gian <b id="workTimer">00:00</b></div>
+  </div>
+  <div id="wsBody" class="ws-body"></div>
+  <div class="ws-actions">
+    <button id="btnAll" type="button" class="ghost">Chọn hết</button>
+    <button id="btnDone" type="button" disabled>Hoàn thành</button>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <dialog id="dlg">

@@ -111,8 +111,9 @@ function logout_(id, note) {
   return { ok: true };
 }
 
-// Công nhân bấm "Hoàn thành" một mã hàng ở Điều hàng.
-// req = { emp, itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA), done:[{l,q}], rest:[{l,q}] }
+// Công nhân bấm "Hoàn thành" (hoặc "Huỷ mã") một mã hàng ở Điều hàng.
+// req = { emp, itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA), done:[{l,q}], rest:[{l,q}],
+//         cancel (true nếu huỷ), reason ('cancel' | 'timeout' = quá 1 giờ | 'other' = người khác đăng nhập) }
 // done = các line đã xong, rest = các line còn hàng chờ nhưng chưa đánh dấu xong.
 function complete_(req) {
   const emp = findEmp_(req.emp);
@@ -123,10 +124,14 @@ function complete_(req) {
   const start = Number(req.startedAt), end = Number(req.endedAt);
   const ok = isFinite(start) && isFinite(end) && end >= start;
   const sec = ok ? Math.round((end - start) / 1000) : '';
-  const qty = done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0);
+  const cancel = !!req.cancel;
+  const qty = cancel ? '' : done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0); // huỷ thì chưa tính là đã điều
   const note = ('Line xong: ' + fmt(done) + (rest.length ? ' | Chưa xong: ' + fmt(rest) : '')).slice(0, 200);
-  safeLog_([new Date(), emp.id, emp.name, 'HOÀN THÀNH', String(req.itemCode || '').slice(0, 30), String(req.itemName || '').slice(0, 100),
-    rest.length ? 'XONG MỘT PHẦN' : 'XONG ĐỦ', '', '', note, ok ? new Date(start) : '', sec, qty]);
+  const result = cancel
+    ? (req.reason === 'timeout' ? 'QUÁ 1 GIỜ' : (req.reason === 'other' ? 'NGƯỜI KHÁC VÀO' : 'ĐÃ HUỶ'))
+    : (rest.length ? 'XONG MỘT PHẦN' : 'XONG ĐỦ');
+  safeLog_([new Date(), emp.id, emp.name, cancel ? 'HUỶ MÃ' : 'HOÀN THÀNH', String(req.itemCode || '').slice(0, 30),
+    String(req.itemName || '').slice(0, 100), result, '', '', note, ok ? new Date(start) : '', sec, qty]);
   return { ok: true, seconds: sec };
 }
 

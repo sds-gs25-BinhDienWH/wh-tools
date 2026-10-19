@@ -262,6 +262,7 @@ async function doLoginEmp(raw) {
     $('#moveOut').innerHTML = '';
     setEmp({ id: r.id, name: r.name });
     toast('Xin chào ' + r.name);
+    restoreJob(); // có mã làm dở của chính người này (chưa quá 1 giờ) thì mở lại luôn
     refresh(); schedule();
   } catch (e) { out.innerHTML = errBox(e); }
   $('#empCode').value = '';
@@ -285,12 +286,19 @@ function logout(reason, msg) {
   const e = S.emp;
   if (!e) return;
   sendLogout(e, reason);
-  S.work = null;
+  S.work = null; jobStore.clear();
+  closeWork();
   setEmp(null);
   $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; $('#empCode').value = '';
   if (msg) toast(msg);
 }
 function checkIdle() {
+  // Đang làm dở một mã: không tự đăng xuất theo thời gian rảnh (người ta đang đi chuyển hàng, không chạm máy).
+  // Thay vào đó mã làm dở được giữ tối đa 1 giờ, quá hạn thì huỷ (có ghi log).
+  if (S.work) {
+    if (Date.now() - S.work.startedAt > WORK_TTL_MS) discardWork('timeout', 'Mã làm quá 1 giờ nên đã huỷ');
+    return;
+  }
   if (S.emp && Date.now() - S.emp.at > IDLE_MS) logout('idle', 'Hết phiên, vui lòng đăng nhập lại');
 }
 
@@ -372,7 +380,6 @@ async function lookupItem(raw) {
   const code = raw.trim();
   if (!code) return;
   if (!S.emp) { renderEmp(); return; }
-  if (S.work && S.work.done.size) toast('Mã trước chưa bấm Hoàn thành nên chưa được ghi');
   const out = $('#moveOut');
   out.innerHTML = loading;
   S.work = null;
@@ -385,7 +392,9 @@ async function lookupItem(raw) {
       if (k >= 0) q[k] = Number(d.Quantity) || 0;
     }
     // Bắt đầu tính giờ từ lúc quét mã (lúc có kết quả)
-    S.work = { code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
+    S.work = { emp: S.emp.id, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
+    out.innerHTML = '';
+    jobStore.save();
     renderWork();
   } catch (e) {
     out.innerHTML = errBox(e);
@@ -393,47 +402,150 @@ async function lookupItem(raw) {
   $('#moveCode').value = ''; if (S.emp) $('#moveCode').focus();
 }
 
-// ---------- Làm việc với một mã hàng: chạm line đã xong để sáng lên, rồi bấm Hoàn thành ----------
-const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+// ---------- Làm việc với một mã hàng: màn hình riêng phủ kín, KHOÁ cho tới khi bấm Hoàn thành ----------
+// Quét mã -> mở màn hình này. Chạm line đã xong để chốt (chốt rồi thì không chạm bỏ được, phải giữ ô).
+// Chỉ "Hoàn thành" mới đóng màn hình. Lối thoát duy nhất khác là giữ nút "Huỷ mã" (để khỏi kẹt khi quét nhầm mã).
+const WORK_TTL_MS = 60 * 60000; // mã làm dở được giữ trên máy tối đa 1 giờ (kể cả lỡ thoát app); quá hạn thì huỷ
+const HOLD_UNDO_MS = 1500;      // phải giữ ô đã chốt chừng này mới bỏ chọn được
+const HOLD_CANCEL_MS = 2000;    // phải giữ nút Huỷ mã chừng này mới huỷ
 
-function renderWork() {
-  const w = S.work, out = $('#moveOut');
-  if (!w) return;
-  const todo = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
-  const row = from => w.q.slice(from, from + 7).map((v, i) => {
-    const k = from + i, on = w.done.has(k);
-    if (v <= 0) return `<div class="cell zero"><small>${LINES[k]}</small><b>${v}</b></div>`;
-    return `<button type="button" class="cell pick ${on ? 'done' : ''}" data-k="${k}" aria-pressed="${on}"><small>${LINES[k]}</small><b>${v}</b></button>`;
-  }).join('');
-  if (!todo.length) {
-    out.innerHTML = `<div class="card"><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.code)}</div>
-      <p class="muted">Mã này hiện không còn hàng chờ ở line nào.</p></div>`;
-    S.work = null;
-    return;
-  }
-  out.innerHTML = `<div class="card work"><div class="name">${esc(w.name)}</div>
-    <div class="meta">${esc(w.code)} · Bắt đầu ${hhmmss(w.startedAt)} · <b id="workTimer">${mmss(Date.now() - w.startedAt)}</b></div>
-    <div class="grid">${row(0)}</div><div class="grid">${row(7)}</div>
-    <div class="totals"><span class="zA">Khu A: ${zoneA(w)}</span><span class="zB">Khu B: ${zoneB(w)}</span><span>Tổng: ${sum(w.q)}</span></div>
-    <p class="hint" style="margin:8px 0 0">Chạm vào line đã làm xong để đánh dấu.</p>
-    <div class="work-actions">
-      <button type="button" id="btnAll" class="ghost">Chọn hết</button>
-      <button type="button" id="btnDone" ${w.done.size ? '' : 'disabled'}>Hoàn thành (${w.done.size}/${todo.length})</button>
-    </div></div>`;
+const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+const todoOf = w => w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
+const snap = w => ({ emp: w.emp, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
+
+// Lưu mã đang làm dở lên máy: lỡ đóng app/tắt máy thì đăng nhập lại là làm tiếp, không phải quét lại mã
+const jobStore = {
+  save() { if (S.work) store.set('job', snap(S.work)); },
+  load() { return store.get('job', null); },
+  clear() { try { localStorage.removeItem('job'); } catch { /* bỏ qua */ } },
+};
+
+let skipPop = false; // bỏ qua popstate do chính mình gọi history.back()
+function openWork() {
+  $('#workScreen').hidden = false;
+  $('.page').inert = true; // chặn mọi thao tác phía sau (ô nhập, tab, đổi người)
+  try { history.pushState({ work: 1 }, ''); } catch { /* bỏ qua */ }
+}
+function closeWork() {
+  const ws = $('#workScreen');
+  if (ws.hidden) return;
+  ws.hidden = true;
+  cancelHold();
+  $('.page').inert = !S.emp;
+  if (history.state && history.state.work) { skipPop = true; try { history.back(); } catch { skipPop = false; } }
 }
 
-function toggleLine(k) {
+// Báo proxy mã bị huỷ / quá hạn (không chờ, không báo lỗi). job = snap(...) hoặc bản đã lưu trên máy.
+function sendCancel(job, reason) {
+  try {
+    const base = baseOrThrow();
+    if (!isProxy(base)) return;
+    const all = todoOf(job), dn = new Set(job.done);
+    const pick = ks => ks.map(k => ({ l: LINES[k], q: job.q[k] }));
+    fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
+      body: JSON.stringify({ action: 'complete', cancel: true, reason, emp: job.emp, itemCode: job.code, itemName: job.name,
+        startedAt: job.startedAt, endedAt: Date.now(), done: pick(all.filter(k => dn.has(k))), rest: pick(all.filter(k => !dn.has(k))) }) }).catch(() => {});
+  } catch { /* bỏ qua */ }
+}
+
+// Bỏ mã đang làm dở (giữ nút Huỷ mã, hoặc quá 1 giờ). Có ghi log để biết mã nào bị huỷ.
+function discardWork(reason, msg) {
+  const w = S.work;
+  if (w) sendCancel(snap(w), reason);
+  S.work = null; jobStore.clear(); closeWork();
+  if (msg) toast(msg);
+  if (S.emp) $('#moveCode').focus();
+}
+
+// Mở lại mã làm dở sau khi đăng nhập (hoặc mở lại app). Chỉ đúng người đó, và chưa quá 1 giờ.
+function restoreJob() {
+  const j = jobStore.load();
+  if (!j || !S.emp || S.work) return;
+  if (Date.now() - j.startedAt > WORK_TTL_MS) { sendCancel(j, 'timeout'); jobStore.clear(); toast(`Mã ${j.code} làm dở quá 1 giờ nên đã huỷ`); return; }
+  if (j.emp !== S.emp.id) { sendCancel(j, 'other'); jobStore.clear(); return; } // người khác dùng máy: bỏ việc dở của người trước
+  S.work = { emp: j.emp, code: j.code, name: j.name, q: j.q, startedAt: j.startedAt, done: new Set(j.done), sending: false };
+  renderWork();
+  toast('Tiếp tục mã đang làm dở');
+}
+
+function renderWork() {
+  const w = S.work;
+  if (!w) return;
+  const todo = todoOf(w);
+  if (!todo.length) {
+    $('#moveOut').innerHTML = `<div class="card"><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.code)}</div>
+      <p class="muted">Mã này hiện không còn hàng chờ ở line nào.</p></div>`;
+    S.work = null; jobStore.clear();
+    return;
+  }
+  const zone = (title, cls, from) => {
+    const ks = todo.filter(k => k >= from && k < from + 7);
+    if (!ks.length) return '';
+    return `<div class="ws-zone ${cls}"><span>${title}</span><span>${sum(ks.map(k => w.q[k]))}</span></div>
+      <div class="ws-grid">${ks.map(k => `<button type="button" class="ws-cell ${cls}" data-k="${k}" aria-pressed="false"><small>${LINES[k]}</small><b>${w.q[k]}</b></button>`).join('')}</div>`;
+  };
+  $('#wsBody').innerHTML = `<div class="ws-name">${esc(w.name)}</div>
+    <div class="ws-meta">${esc(w.code)} · Bắt đầu ${hhmmss(w.startedAt)} · Tổng ${sum(w.q)}</div>
+    ${zone('KHU A', 'zA', 0)}${zone('KHU B', 'zB', 7)}
+    <p class="hint" style="margin-top:16px">Chạm line đã làm xong để chốt. Chốt rồi muốn bỏ thì <b>giữ ô 1,5 giây</b>.
+      Làm xong hết thì bấm <b>Hoàn thành</b>. Quét nhầm mã thì giữ nút <b>Huỷ mã</b> 2 giây.</p>`;
+  $('#wsBody').scrollTop = 0;
+  updateWorkUI();
+  $('#workTimer').textContent = mmss(Date.now() - w.startedAt);
+  openWork();
+}
+
+// Cập nhật tại chỗ (không vẽ lại cả màn hình) để không bị nhảy cuộn khi chạm
+function updateWorkUI() {
+  const w = S.work;
+  if (!w) return;
+  $$('#wsBody .ws-cell').forEach(c => {
+    const on = w.done.has(Number(c.dataset.k));
+    c.classList.toggle('done', on);
+    c.setAttribute('aria-pressed', on);
+  });
+  const n = todoOf(w).length;
+  const bd = $('#btnDone');
+  bd.disabled = !w.done.size || w.sending;
+  bd.textContent = w.sending ? 'Đang ghi…' : `Hoàn thành (${w.done.size}/${n})`;
+  $('#btnAll').disabled = w.sending || w.done.size === n;
+}
+
+function tapLine(k) {
   const w = S.work;
   if (!w || w.sending || !(w.q[k] > 0)) return;
-  w.done.has(k) ? w.done.delete(k) : w.done.add(k);
-  renderWork();
+  if (w.done.has(k)) { toast('Đã chốt rồi. Muốn bỏ chọn thì giữ ô 1,5 giây'); return; } // chạm thường không bỏ được
+  w.done.add(k); jobStore.save(); updateWorkUI();
+}
+function undoLine(k) {
+  const w = S.work;
+  if (!w || w.sending || !w.done.has(k)) return;
+  w.done.delete(k); jobStore.save(); updateWorkUI();
+  toast('Đã bỏ chọn ' + LINES[k]);
+  try { navigator.vibrate && navigator.vibrate(40); } catch { /* bỏ qua */ }
 }
 function selectAllLines() {
   const w = S.work;
   if (!w || w.sending) return;
-  const todo = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0);
-  todo.length === w.done.size ? w.done.clear() : todo.forEach(k => w.done.add(k)); // bấm lần nữa để bỏ chọn hết
-  renderWork();
+  todoOf(w).forEach(k => w.done.add(k)); // chỉ thêm, không bỏ (muốn bỏ phải giữ từng ô)
+  jobStore.save(); updateWorkUI();
+}
+
+// Giữ lâu mới có tác dụng (bỏ chọn một ô / huỷ mã): hiện thanh tô dần để người dùng biết đang giữ
+let hold = null, suppressClickUntil = 0;
+function startHold(ms, fire, el) {
+  cancelHold();
+  el.style.setProperty('--hold', ms + 'ms');
+  el.classList.add('holding');
+  hold = { el, t: setTimeout(() => {
+    hold = null; el.classList.remove('holding');
+    suppressClickUntil = Date.now() + 350; // nhả tay ra sẽ sinh thêm một cú click, bỏ qua nó
+    fire();
+  }, ms) };
+}
+function cancelHold() {
+  if (!hold) return;
+  clearTimeout(hold.t); hold.el.classList.remove('holding'); hold = null;
 }
 
 async function completeWork() {
@@ -441,28 +553,27 @@ async function completeWork() {
   if (!w || w.sending || !w.done.size) return;
   const endedAt = Date.now();
   const pick = ks => ks.map(k => ({ l: LINES[k], q: w.q[k] }));
-  const all = w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0);
+  const all = todoOf(w);
   const doneKs = all.filter(k => w.done.has(k)), restKs = all.filter(k => !w.done.has(k));
-  const btn = $('#btnDone');
-  w.sending = true; btn.disabled = true; btn.textContent = 'Đang ghi…';
+  w.sending = true; updateWorkUI();
   try {
     const base = baseOrThrow();
     if (isProxy(base)) {
       await request(signal => proxyFetch(base, { action: 'complete', emp: S.emp.id, itemCode: w.code, itemName: w.name,
         startedAt: w.startedAt, endedAt, done: pick(doneKs), rest: pick(restKs) }, signal));
     }
-    const out = $('#moveOut');
-    out.innerHTML = `<div class="card done-box"><div class="name">✓ Đã ghi hoàn thành</div>
+    $('#moveOut').innerHTML = `<div class="card done-box"><div class="name">✓ Đã ghi hoàn thành</div>
       <div class="meta">${esc(w.name)} · ${esc(w.code)}</div>
       <div class="totals"><span>Mất <b>${mmss(endedAt - w.startedAt)}</b></span><span>${doneKs.length}/${all.length} line</span>${restKs.length ? '<span class="zB">Còn ' + restKs.length + ' line chưa xong</span>' : ''}</div>
       ${isProxy(base) ? '' : '<p class="hint">Chế độ thử (không có proxy): chưa ghi vào sổ nhật ký.</p>'}</div>`;
-    S.work = null;
+    S.work = null; jobStore.clear();
+    closeWork();
     $('#moveCode').focus();
   } catch (e) {
-    // Lỗi mạng/proxy: giữ nguyên các line đã đánh dấu để bấm lại, không mất công
+    // Lỗi mạng/proxy: giữ nguyên các line đã chốt để bấm lại, không mất công
     w.sending = false;
     if (/^NO_EMP/.test(e.message || '')) { logout('invalid', 'Phiên không hợp lệ, vui lòng đăng nhập lại'); return; }
-    renderWork();
+    updateWorkUI();
     toast('Chưa ghi được: ' + (e.message || e));
   }
 }
@@ -570,11 +681,29 @@ function init() {
   $('#formEmp').addEventListener('submit', e => { e.preventDefault(); doLoginEmp($('#empCode').value); });
   $('#btnSwitch').addEventListener('click', () => logout('manual'));
   $('#formMove').addEventListener('submit', e => { e.preventDefault(); lookupItem($('#moveCode').value); });
-  $('#moveOut').addEventListener('click', e => {
-    const cell = e.target.closest('.cell.pick');
-    if (cell) return toggleLine(Number(cell.dataset.k));
+  const ws = $('#workScreen');
+  ws.addEventListener('click', e => {
+    if (Date.now() < suppressClickUntil) return; // cú click sinh ra khi nhả tay sau khi giữ
+    const cell = e.target.closest('.ws-cell');
+    if (cell) return tapLine(Number(cell.dataset.k));
     if (e.target.closest('#btnAll')) return selectAllLines();
     if (e.target.closest('#btnDone')) return completeWork();
+    if (e.target.closest('#wsCancel')) toast('Muốn huỷ mã này thì giữ nút 2 giây');
+  });
+  // Giữ ô đã chốt 1,5 giây để bỏ chọn; giữ nút Huỷ mã 2 giây để huỷ. Thả sớm/cuộn là thôi.
+  ws.addEventListener('pointerdown', e => {
+    if (!S.work || S.work.sending) return;
+    const cell = e.target.closest('.ws-cell.done');
+    if (cell) return startHold(HOLD_UNDO_MS, () => undoLine(Number(cell.dataset.k)), cell);
+    const x = e.target.closest('#wsCancel');
+    if (x) startHold(HOLD_CANCEL_MS, () => discardWork('cancel', 'Đã huỷ mã này'), x);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => ws.addEventListener(ev, cancelHold, true));
+  ws.addEventListener('contextmenu', e => e.preventDefault()); // chặn menu hiện ra khi giữ lâu
+  // Nút Back của PDA/điện thoại KHÔNG thoát được màn hình làm việc (chỉ Hoàn thành mới thoát)
+  window.addEventListener('popstate', () => {
+    if (skipPop) { skipPop = false; return; }
+    if (!ws.hidden) { try { history.pushState({ work: 1 }, ''); } catch { /* bỏ qua */ } toast('Làm xong thì bấm Hoàn thành để thoát'); }
   });
   // Đồng hồ đếm thời gian của mã đang làm (chỉ cập nhật số, không vẽ lại cả khối)
   setInterval(() => { const t = $('#workTimer'); if (t && S.work) t.textContent = mmss(Date.now() - S.work.startedAt); }, 1000);
@@ -606,8 +735,9 @@ function init() {
     if (Date.now() - snap.at < FRESH_MS) S.prevMap = new Map(snap.items.map(i => [i.code, i]));
   }
   renderList(); renderStatus();
-  checkIdle();      // phiên cũ còn lưu nhưng đã quá hạn thì đăng xuất (và ghi log) ngay
   renderEmp();      // chưa đăng nhập: hiện màn hình đăng nhập
+  restoreJob();     // lỡ tải lại trang giữa chừng: mở lại mã đang làm dở (phải chạy TRƯỚC checkIdle)
+  checkIdle();      // phiên cũ quá hạn thì đăng xuất (và ghi log); đang có mã làm dở thì không đăng xuất
   showTab(ENABLED_TABS.includes(S.tab) ? S.tab : 'list');
   if (S.tab !== 'list') refresh();
   schedule();
