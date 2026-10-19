@@ -64,11 +64,11 @@ const proxyFetch = (base, payload, signal) => fetch(base, { method: 'POST',
   headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal });
 
 // Mọi lệnh gọi đều kèm mã nhân viên đang đăng nhập; proxy kiểm tra và ghi log theo người đó
-async function api(method, path, body, emp = S.emp && S.emp.id) {
+async function api(method, path, body, emp = S.emp && S.emp.id, job = null) {
   const base = baseOrThrow();
   try {
     return await request(signal => {
-      if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null }, signal);
+      if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null, job }, signal);
       if (method === 'GET') return fetch(base + path, { signal });
       return fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal });
     });
@@ -375,16 +375,21 @@ function suggestEmps() {
 }
 
 // ---------- Điều hàng (itemPending) ----------
+let lookupBusy = false; // máy quét đôi khi gửi Enter hai lần: chỉ nhận một lần tra tại một thời điểm (tránh sinh hai dòng log)
+const newJobId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
 async function lookupItem(raw) {
   hideSugg();
   const code = raw.trim();
-  if (!code) return;
+  if (!code || lookupBusy) return;
   if (!S.emp) { renderEmp(); return; }
+  lookupBusy = true;
   const out = $('#moveOut');
   out.innerHTML = loading;
   S.work = null;
+  const job = newJobId(); // mã phiên: proxy dùng để mở dòng lúc quét và đóng đúng dòng đó lúc Hoàn thành
   try {
-    const j = await api('POST', '/pda/itemPending', { ItemCode: code });
+    const j = await api('POST', '/pda/itemPending', { ItemCode: code }, S.emp && S.emp.id, job);
     if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
     const q = LINES.map(() => 0);
     for (const d of j.Details) {
@@ -392,12 +397,14 @@ async function lookupItem(raw) {
       if (k >= 0) q[k] = Number(d.Quantity) || 0;
     }
     // Bắt đầu tính giờ từ lúc quét mã (lúc có kết quả)
-    S.work = { emp: S.emp.id, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
+    S.work = { emp: S.emp.id, job, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
     out.innerHTML = '';
     jobStore.save();
     renderWork();
   } catch (e) {
     out.innerHTML = errBox(e);
+  } finally {
+    lookupBusy = false;
   }
   $('#moveCode').value = ''; if (S.emp) $('#moveCode').focus();
 }
@@ -411,7 +418,7 @@ const HOLD_CANCEL_MS = 2000;    // phải giữ nút Huỷ mã chừng này mớ
 
 const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
 const todoOf = w => w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
-const snap = w => ({ emp: w.emp, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
+const snap = w => ({ emp: w.emp, job: w.job, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
 
 // Lưu mã đang làm dở lên máy: lỡ đóng app/tắt máy thì đăng nhập lại là làm tiếp, không phải quét lại mã
 const jobStore = {
@@ -443,7 +450,7 @@ function sendCancel(job, reason) {
     const all = todoOf(job), dn = new Set(job.done);
     const pick = ks => ks.map(k => ({ l: LINES[k], q: job.q[k] }));
     fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
-      body: JSON.stringify({ action: 'complete', cancel: true, reason, emp: job.emp, itemCode: job.code, itemName: job.name,
+      body: JSON.stringify({ action: 'complete', cancel: true, reason, emp: job.emp, job: job.job, itemCode: job.code, itemName: job.name,
         startedAt: job.startedAt, endedAt: Date.now(), done: pick(all.filter(k => dn.has(k))), rest: pick(all.filter(k => !dn.has(k))) }) }).catch(() => {});
   } catch { /* bỏ qua */ }
 }
@@ -463,7 +470,7 @@ function restoreJob() {
   if (!j || !S.emp || S.work) return;
   if (Date.now() - j.startedAt > WORK_TTL_MS) { sendCancel(j, 'timeout'); jobStore.clear(); toast(`Mã ${j.code} làm dở quá 1 giờ nên đã huỷ`); return; }
   if (j.emp !== S.emp.id) { sendCancel(j, 'other'); jobStore.clear(); return; } // người khác dùng máy: bỏ việc dở của người trước
-  S.work = { emp: j.emp, code: j.code, name: j.name, q: j.q, startedAt: j.startedAt, done: new Set(j.done), sending: false };
+  S.work = { emp: j.emp, job: j.job, code: j.code, name: j.name, q: j.q, startedAt: j.startedAt, done: new Set(j.done), sending: false };
   renderWork();
   toast('Tiếp tục mã đang làm dở');
 }
@@ -559,7 +566,7 @@ async function completeWork() {
   try {
     const base = baseOrThrow();
     if (isProxy(base)) {
-      await request(signal => proxyFetch(base, { action: 'complete', emp: S.emp.id, itemCode: w.code, itemName: w.name,
+      await request(signal => proxyFetch(base, { action: 'complete', emp: S.emp.id, job: w.job, itemCode: w.code, itemName: w.name,
         startedAt: w.startedAt, endedAt, done: pick(doneKs), rest: pick(restKs) }, signal));
     }
     $('#moveOut').innerHTML = `<div class="card done-box"><div class="name">✓ Đã ghi hoàn thành</div>
@@ -666,6 +673,39 @@ function showTab(t) {
   }
 }
 
+// ---------- Tự cập nhật khi bạn đẩy bản mới lên GitHub ----------
+// App mở sẵn cả ngày vẫn chạy bản cũ nếu không tải lại. App định kỳ hỏi GitHub nội dung các file chính, thấy khác
+// bản đang chạy thì tự tải lại, nhưng CHỈ khi không làm gián đoạn ai: không tải lại lúc đang làm một mã (màn hình khoá).
+const APP_FILES = ['index.html', 'app.js', 'style.css'];
+let baseFp = null, updateReady = false;
+
+async function fingerprint() {
+  const parts = await Promise.all(APP_FILES.map(f => fetch(f, { cache: 'no-store' }).then(r => r.ok ? r.text() : '')));
+  const s = parts.join('\u0000');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h + ':' + s.length;
+}
+async function checkNewVersion() {
+  try {
+    const fp = await fingerprint();
+    if (baseFp === null) { baseFp = fp; return; }      // lần đầu: ghi nhận bản đang chạy làm mốc
+    if (fp !== baseFp) { updateReady = true; maybeReload(); }
+  } catch { /* mất mạng: thử lại lần sau */ }
+}
+function maybeReload() {
+  if (!updateReady || S.work || !$('#workScreen').hidden || S.busy) return;
+  updateReady = false;
+  location.reload();
+}
+function setupAutoUpdate() {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (location.protocol === 'file:') return;
+  checkNewVersion();                                                   // ghi mốc ngay khi mở
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkNewVersion(); maybeReload(); } });
+  setInterval(checkNewVersion, 10 * 60000);                            // và định kỳ 10 phút
+  setInterval(maybeReload, 20000);                                     // đang bận (làm mã dở) thì thử lại, xong việc là cập nhật
+}
 // ---------- Khởi động ----------
 function init() {
   $$('.rail-item').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -742,6 +782,6 @@ function init() {
   if (S.tab !== 'list') refresh();
   schedule();
 
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  setupAutoUpdate();
 }
 init();

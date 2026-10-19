@@ -14,7 +14,8 @@ const UPSTREAM = 'http://119.15.179.186:8081/api';
 const EMP_SHEET = 'Trang tính1'; // tên tab danh sách nhân viên (không tìm thấy thì dùng tab đầu tiên)
 const EMP_ID_COL = 3;            // cột chứa Employee ID   (A=1, B=2, C=3)
 const EMP_NAME_COL = 2;          // cột chứa họ tên        (cột B: Full Name)
-const LOG_SHEET = 'Log';         // tab nhật ký (tự tạo)
+const LOG_SHEET = 'Log';         // tab nhật ký chung: đăng nhập, đăng xuất, quét sai... (tự tạo)
+const JOB_SHEET = 'Điều hàng';   // tab điều hàng: MỖI MÃ HÀNG MỘT DÒNG, có giờ bắt đầu và kết thúc (tự tạo)
 
 // Chỉ cho đi qua các API tra cứu đã biết, giá trị là số giây cache (bảo vệ server kho).
 // MỌI API ở đây đều bắt buộc có nhân viên hợp lệ.
@@ -25,10 +26,12 @@ const ALLOW = {
   'POST /pda/storeAssorted': 10,
 };
 
-// API nào được GHI LOG và tên hành động ghi trong sheet.
+// Điều hàng (tra một mã hàng) có cách ghi riêng: mỗi mã một dòng ở tab JOB_SHEET (xem logItemScan_ / closeJob_).
+const ITEM_KEY = 'POST /pda/itemPending';
+
+// Các API khác được ghi vào tab Log chung, kèm tên hành động.
 // API không có ở đây (vd: danh sách hàng chờ tự tải mỗi phút) chỉ kiểm tra nhân viên, không ghi log.
 const LOG_ACTION = {
-  'POST /pda/itemPending': 'ĐIỀU HÀNG',
   'POST /pda/storeAssorted': 'KIỂM HÀNG',
   'POST /pda/location': 'GHÉP PAXD',
 };
@@ -67,7 +70,8 @@ function doPost(e) {
     const r = fetchUpstream_(method, path, body, key, ALLOW[key]);
 
     // Ghi log kể cả khi kết quả lấy từ cache, để không sót lượt nào
-    if (LOG_ACTION[key]) logAction_(emp, LOG_ACTION[key], req.body, r);
+    if (key === ITEM_KEY) logItemScan_(emp, req.body, r, req.job);
+    else if (LOG_ACTION[key]) logAction_(emp, LOG_ACTION[key], req.body, r);
 
     if (!r.ok) return out({ __error: r.error });
     return raw(r.text);
@@ -111,8 +115,9 @@ function logout_(id, note) {
   return { ok: true };
 }
 
-// Công nhân bấm "Hoàn thành" (hoặc "Huỷ mã") một mã hàng ở Điều hàng.
-// req = { emp, itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA), done:[{l,q}], rest:[{l,q}],
+// Công nhân bấm "Hoàn thành" (hoặc "Huỷ mã") một mã hàng ở Điều hàng: đóng dòng đã mở lúc quét.
+// req = { emp, job (mã phiên do app tạo lúc quét), itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA, chỉ dùng
+//         khi không tìm thấy dòng lúc quét), done:[{l,q}], rest:[{l,q}],
 //         cancel (true nếu huỷ), reason ('cancel' | 'timeout' = quá 1 giờ | 'other' = người khác đăng nhập) }
 // done = các line đã xong, rest = các line còn hàng chờ nhưng chưa đánh dấu xong.
 function complete_(req) {
@@ -121,18 +126,17 @@ function complete_(req) {
   const lst = function (x) { return Array.isArray(x) ? x.slice(0, 14) : []; };
   const fmt = function (a) { return a.map(function (d) { return String(d.l).slice(0, 4) + '=' + (Number(d.q) || 0); }).join(', '); };
   const done = lst(req.done), rest = lst(req.rest);
-  const start = Number(req.startedAt), end = Number(req.endedAt);
-  const ok = isFinite(start) && isFinite(end) && end >= start;
-  const sec = ok ? Math.round((end - start) / 1000) : '';
   const cancel = !!req.cancel;
-  const qty = cancel ? '' : done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0); // huỷ thì chưa tính là đã điều
-  const note = ('Line xong: ' + fmt(done) + (rest.length ? ' | Chưa xong: ' + fmt(rest) : '')).slice(0, 200);
-  const result = cancel
+  const status = cancel
     ? (req.reason === 'timeout' ? 'QUÁ 1 GIỜ' : (req.reason === 'other' ? 'NGƯỜI KHÁC VÀO' : 'ĐÃ HUỶ'))
     : (rest.length ? 'XONG MỘT PHẦN' : 'XONG ĐỦ');
-  safeLog_([new Date(), emp.id, emp.name, cancel ? 'HUỶ MÃ' : 'HOÀN THÀNH', String(req.itemCode || '').slice(0, 30),
-    String(req.itemName || '').slice(0, 100), result, '', '', note, ok ? new Date(start) : '', sec, qty]);
-  return { ok: true, seconds: sec };
+  const qty = cancel ? '' : done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0); // huỷ thì chưa tính là đã điều
+  try {
+    closeJob_(emp, req, status, fmt(done), fmt(rest), qty);
+  } catch (e) {
+    console.error('Đóng dòng điều hàng lỗi: ' + e); // không chặn công nhân
+  }
+  return { ok: true };
 }
 
 // Gợi ý khi nhân viên nhập tay: khớp theo tên (không dấu) hoặc mã. Tối thiểu 2 ký tự, tối đa 8 kết quả.
@@ -195,9 +199,107 @@ function empMap_(force) {
   return map;
 }
 
-// ---------- Nhật ký ----------
+// ---------- Điều hàng: mỗi mã hàng MỘT dòng (tab JOB_SHEET) ----------
+// Cột: A Bắt đầu | B Kết thúc | C Thời lượng (giây) | D Mã NV | E Họ tên | F Mã hàng | G Tên hàng | H Trạng thái
+//      | I Chờ khu A | J Chờ khu B | K Line đã xong | L Line chưa xong | M SL đã điều | N Mã phiên (kỹ thuật, để cập nhật đúng dòng)
+// Trạng thái: ĐANG LÀM -> XONG ĐỦ | XONG MỘT PHẦN | ĐÃ HUỶ | QUÁ 1 GIỜ | NGƯỜI KHÁC VÀO | BỎ DỞ (KHÔNG BÁO)
+const JOB_OPEN = 'ĐANG LÀM';
+
+function jobSheet_() {
+  const book = logSs_();
+  let sh = book.getSheetByName(JOB_SHEET);
+  if (!sh) {
+    sh = book.insertSheet(JOB_SHEET);
+    sh.appendRow(['Bắt đầu', 'Kết thúc', 'Thời lượng (giây)', 'Mã NV', 'Họ tên', 'Mã hàng', 'Tên hàng', 'Trạng thái',
+      'Chờ khu A', 'Chờ khu B', 'Line đã xong', 'Line chưa xong', 'SL đã điều', 'Mã phiên']);
+    sh.setFrozenRows(1);
+    sh.getRange('A:B').setNumberFormat('dd/MM/yyyy HH:mm:ss');
+    ['D:D', 'F:F', 'N:N'].forEach(function (r) { sh.getRange(r).setNumberFormat('@'); }); // giữ nguyên số 0 đầu, không thành số khoa học
+  }
+  return sh;
+}
+
+// Gọi mỗi lần tra một mã hàng ở Điều hàng. Chỉ mã có hàng chờ thật mới mở một dòng ĐANG LÀM.
+function logItemScan_(emp, body, r, jobId) {
+  try {
+    const itemCode = body && body.ItemCode ? String(body.ItemCode).slice(0, 60) : '';
+    const logOther = function (action, result, note) {
+      safeLog_([new Date(), emp.id, emp.name, action, itemCode, '', result, '', '', note || '']);
+    };
+    if (!r.ok) return logOther('QUÉT LỖI', 'LỖI', String(r.error || '').slice(0, 200));
+    const j = JSON.parse(r.text);
+    if (!Array.isArray(j.Details)) return logOther('QUÉT KHÔNG TÌM THẤY', 'KHÔNG TÌM THẤY', '');   // vd: quét nhầm đường link
+    let a = 0, b = 0;
+    j.Details.forEach(function (d) {
+      const q = Number(d.Quantity) || 0;
+      if (String(d.Line).indexOf('A') === 0) a += q; else if (String(d.Line).indexOf('B') === 0) b += q;
+    });
+    if (a + b <= 0) return logOther('QUÉT HẾT HÀNG CHỜ', 'KHÔNG CÒN HÀNG', String(j.ItemName || '').slice(0, 100));
+    if (!jobId) return logOther('ĐIỀU HÀNG (BẢN CŨ)', 'OK', String(j.ItemName || '').slice(0, 100)); // app bản cũ chưa gửi mã phiên
+    const lock = LockService.getScriptLock();
+    lock.waitLock(5000);
+    try {
+      jobSheet_().appendRow([new Date(), '', '', emp.id, emp.name, itemCode, String(j.ItemName || '').slice(0, 100),
+        JOB_OPEN, a, b, '', '', '', String(jobId).slice(0, 40)]);
+    } finally { lock.releaseLock(); }
+    closeStaleJobs_();
+  } catch (e) {
+    console.error('Ghi dòng điều hàng lỗi: ' + e); // không chặn việc tra cứu của công nhân
+  }
+}
+
+// Dọn dòng ĐANG LÀM bị bỏ quên (PDA hỏng/tắt app, không bao giờ báo lại): quá 70 phút thì đổi trạng thái.
+// Chạy tối đa 10 phút một lần, nhân dịp có người quét mã; chỉ xét 2000 dòng cuối cho nhẹ.
+function closeStaleJobs_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('stale_run')) return;
+  cache.put('stale_run', '1', 600);
+  const sh = jobSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const n = Math.min(last - 1, 2000), first = last - n + 1;
+  const vals = sh.getRange(first, 1, n, 8).getValues(); // cột A..H
+  const cutoff = Date.now() - 70 * 60000;
+  vals.forEach(function (v, i) {
+    if (String(v[7]) === JOB_OPEN && v[0] instanceof Date && v[0].getTime() < cutoff) {
+      sh.getRange(first + i, 8).setValue('BỎ DỞ (KHÔNG BÁO)');
+    }
+  });
+}
+
+// Đóng dòng đã mở lúc quét (điền giờ kết thúc, thời lượng, trạng thái, line đã xong).
+// Giờ bắt đầu/kết thúc đều là giờ của server nên không phụ thuộc đồng hồ PDA.
+function closeJob_(emp, req, status, doneText, restText, qty) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    const sh = jobSheet_();
+    const jobId = String(req.job || '').slice(0, 40);
+    let row = 0;
+    if (jobId) {
+      const hit = sh.getRange('N:N').createTextFinder(jobId).matchEntireCell(true).findNext();
+      if (hit) row = hit.getRow();
+    }
+    const now = new Date();
+    if (row) {
+      if (String(sh.getRange(row, 8).getValue()) !== JOB_OPEN) return; // đã đóng rồi (bấm/gửi lại): bỏ qua, không ghi đè
+      const start = sh.getRange(row, 1).getValue();
+      const sec = start instanceof Date ? Math.round((now - start) / 1000) : '';
+      sh.getRange(row, 2, 1, 2).setValues([[now, sec]]);                          // B Kết thúc, C Thời lượng
+      sh.getRange(row, 8).setValue(status);                                       // H Trạng thái
+      sh.getRange(row, 11, 1, 3).setValues([[doneText, restText, qty]]);          // K, L, M
+    } else {
+      // Không thấy dòng lúc quét (ghi lúc quét bị lỗi, hoặc app bản cũ): ghi một dòng đầy đủ bằng giờ máy PDA
+      const s = new Date(Number(req.startedAt)), e = new Date(Number(req.endedAt));
+      const ok = !isNaN(s) && !isNaN(e) && e >= s;
+      sh.appendRow([ok ? s : now, ok ? e : now, ok ? Math.round((e - s) / 1000) : '', emp.id, emp.name,
+        String(req.itemCode || '').slice(0, 60), String(req.itemName || '').slice(0, 100), status, '', '', doneText, restText, qty, jobId]);
+    }
+  } finally { lock.releaseLock(); }
+}
+
+// ---------- Nhật ký chung (tab Log): đăng nhập, đăng xuất, quét sai, kiểm hàng, ghép PAXD ----------
 // Cột: Thời gian | Mã NV | Họ tên | Hành động | Mã hàng | Tên hàng | Kết quả | Chờ khu A | Chờ khu B | Ghi chú
-//      | Bắt đầu | Thời lượng (giây) | SL đã điều      (3 cột cuối chỉ có ở dòng HOÀN THÀNH)
 function logAction_(emp, action, body, r) {
   try {
     const itemCode = body && body.ItemCode ? String(body.ItemCode) : '';
@@ -234,11 +336,9 @@ function appendLog_(row) {
     let sh = book.getSheetByName(LOG_SHEET);
     if (!sh) {
       sh = book.insertSheet(LOG_SHEET);
-      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú',
-        'Bắt đầu', 'Thời lượng (giây)', 'SL đã điều']);
+      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú']);
       sh.setFrozenRows(1);
       sh.getRange('A:A').setNumberFormat('dd/MM/yyyy HH:mm:ss');
-      sh.getRange('K:K').setNumberFormat('dd/MM/yyyy HH:mm:ss');
       sh.getRange('B:B').setNumberFormat('@');
       sh.getRange('E:E').setNumberFormat('@');
     }
