@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#081324">
+<meta name="robots" content="noindex">
+<title>SDS-GS25 Binh Dien Warehouse · Bảng theo dõi</title>
+<link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
+<link rel="stylesheet" href="tv.css">
+</head>
+<body>
+<div class="tv">
+  <header>
+    <div class="brand">
+      <img src="logo.svg?v=4" alt="">
+      <div>
+        <div class="b1">SDS-GS25</div>
+        <div class="b2">Binh Dien Warehouse <span class="badge">TOOL</span></div>
+      </div>
+    </div>
+    <div class="clock"><div id="clockTime">--:--</div><div id="clockDate"></div></div>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi zA"><div class="k-label">Hàng chờ khu A</div><div class="k-num" id="kA">–</div></div>
+    <div class="kpi zB"><div class="k-label">Hàng chờ khu B</div><div class="k-num" id="kB">–</div></div>
+    <div class="kpi"><div class="k-label">Mã còn chờ</div><div class="k-num" id="kItems">–</div></div>
+    <div class="kpi ok"><div class="k-label">Đã điều hôm nay</div><div class="k-num" id="kDone">–</div><div class="k-sub" id="kQty"></div></div>
+    <div class="kpi"><div class="k-label">Đang làm</div><div class="k-num" id="kDoing">–</div><div class="k-sub">mã</div></div>
+  </section>
+
+  <section class="main">
+    <div class="panel chart">
+      <h2>Hàng chờ theo line</h2>
+      <div class="bars" id="bars"></div>
+    </div>
+    <div class="panel top">
+      <h2>Mã còn nhiều hàng chờ nhất</h2>
+      <div id="topList"></div>
+    </div>
+  </section>
+
+  <footer><span class="dot" id="dot"></span><span id="status">Đang tải…</span></footer>
+</div>
+<script src="tv.js"></script>
+</body>
+</html>

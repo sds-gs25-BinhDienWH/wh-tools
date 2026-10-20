@@ -51,7 +51,7 @@ function testSetup() {
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-20b · điều hàng: mỗi mã một dòng, mã phiên = Họ tên_Mã hàng_giờ bắt đầu';
+const VERSION = '2026-10-20c · điều hàng: mỗi mã một dòng, mã phiên = Họ_tên_Mã_hàng_giờ bắt đầu';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -62,6 +62,7 @@ function doPost(e) {
     if (req.action === 'logout') return out(logout_(req.emp, req.note));
     if (req.action === 'suggest') return out(suggestEmp_(req.q));
     if (req.action === 'complete') return out(complete_(req));
+    if (req.action === 'dashboard') return out(dashboard_(req.key));
 
     const method = String(req.method || 'GET').toUpperCase();
     const path = String(req.path || '');
@@ -146,6 +147,64 @@ function complete_(req) {
   return { ok: true };
 }
 
+// ---------- Dashboard TV: chỉ số liệu CHUNG của cả kho (không tên người, không thời gian làm việc) ----------
+// Trang tv.html gọi action "dashboard". Nếu có Script property DASH_KEY thì phải gửi đúng khoá mới xem được.
+const LINE_NAMES = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];
+
+function dashboard_(key) {
+  const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
+  if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('dash');
+  if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 20 giây
+
+  const res = { at: Date.now(), pending: null, today: { done: 0, doing: 0, qty: 0 } };
+
+  // Hàng chờ còn lại: lấy từ server kho (cache 15 giây trong fetchUpstream_)
+  try {
+    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 15);
+    if (r.ok) {
+      const j = JSON.parse(r.text);
+      const rows = Array.isArray(j.data) ? j.data : [];   // hết hàng chờ: data = null
+      const lines = {};
+      LINE_NAMES.forEach(function (l) { lines[l] = 0; });
+      let a = 0, b = 0, items = 0;
+      const top = [];
+      rows.forEach(function (it) {
+        let tot = 0;
+        LINE_NAMES.forEach(function (l) {
+          const q = Number(it[l]) || 0;
+          lines[l] += q; tot += q;
+          if (l.charAt(0) === 'A') a += q; else b += q;
+        });
+        if (tot > 0) { items++; top.push({ name: String(it.ItemName || ''), code: String(it.ItemCode || ''), total: tot }); }
+      });
+      top.sort(function (x, y) { return y.total - x.total; });
+      res.pending = { items: items, a: a, b: b, lines: lines, top: top.slice(0, 8) };
+    }
+  } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
+
+  // Tiến độ hôm nay: đếm từ tab "Điều hàng" (chỉ đếm số, không lấy tên người hay thời lượng)
+  try {
+    const sh = logSs_().getSheetByName(JOB_SHEET);
+    if (sh && sh.getLastRow() > 1) {
+      const n = Math.min(sh.getLastRow() - 1, 3000), first = sh.getLastRow() - n + 1;
+      const vals = sh.getRange(first, 1, n, 11).getValues();            // cột A..K
+      const day = function (d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); };
+      const today = day(new Date()), recent = Date.now() - 70 * 60000;
+      vals.forEach(function (v) {
+        if (!(v[0] instanceof Date)) return;
+        const status = String(v[7]);
+        if (status === 'XONG ĐỦ' && day(v[0]) === today) { res.today.done++; res.today.qty += Number(v[10]) || 0; }
+        else if (status === JOB_OPEN && v[0].getTime() > recent) res.today.doing++;
+      });
+    }
+  } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
+
+  cache.put('dash', JSON.stringify(res), 20);
+  return res;
+}
+
 // Gợi ý khi nhân viên nhập tay: khớp theo tên (không dấu) hoặc mã. Tối thiểu 2 ký tự, tối đa 8 kết quả.
 // Đặt SUGGEST_EMP = false nếu không muốn trả danh sách tên/mã ra ngoài.
 const SUGGEST_EMP = true;
@@ -209,7 +268,7 @@ function empMap_(force) {
 // ---------- Điều hàng: mỗi mã hàng MỘT dòng (tab JOB_SHEET) ----------
 // Cột: A Bắt đầu | B Kết thúc | C Thời lượng (giây) | D Mã NV | E Họ tên | F Mã hàng | G Tên hàng | H Trạng thái
 //      | I Chờ khu A | J Chờ khu B | K SL đã điều | L Mã phiên
-// Mã phiên = Họ tên + "_" + Mã hàng + "_" + giờ bắt đầu (yyyyMMddHHmmss, giờ Việt Nam). Proxy tạo lúc quét và trả về cho app
+// Mã phiên = Họ_tên + "_" + Mã_hàng + "_" + giờ bắt đầu (yyyyMMddHHmmss, giờ Việt Nam), dấu cách đổi thành "_". Proxy tạo lúc quét và trả về cho app
 // để lúc Hoàn thành app gửi lại đúng mã này, proxy tìm đúng dòng mà đóng.
 // Trạng thái: ĐANG LÀM -> XONG ĐỦ | ĐÃ HUỶ | QUÁ 1 GIỜ | NGƯỜI KHÁC VÀO | BỎ DỞ (KHÔNG BÁO)
 // (App bắt buộc chốt đủ mọi line mới cho hoàn thành, nên không còn cột "Line đã xong / chưa xong".)
@@ -252,7 +311,9 @@ function logItemScan_(emp, body, r) {
     });
     if (a + b <= 0) return logOther('QUÉT HẾT HÀNG CHỜ', 'KHÔNG CÒN HÀNG', String(j.ItemName || '').slice(0, 100));
     const now = new Date();
-    const id = (emp.name + '_' + itemCode + '_' + Utilities.formatDate(now, TZ, 'yyyyMMddHHmmss')).slice(0, 120);
+    // Mã phiên không có dấu cách: "Phan Thi My Huyen" -> "Phan_Thi_My_Huyen"
+    const id = (String(emp.name).trim().replace(/\s+/g, '_') + '_' + itemCode.replace(/\s+/g, '_') + '_' +
+      Utilities.formatDate(now, TZ, 'yyyyMMddHHmmss')).slice(0, 120);
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
     try {

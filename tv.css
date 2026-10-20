@@ -1,0 +1,57 @@
+/* Bảng theo dõi trên TV: chữ to, nền tối, cùng bộ màu SDS-GS25 (cyan #00D2A0, navy, cam #F3B94D). Co giãn theo chiều rộng màn hình. */
+:root{
+  --bg1:#081324; --bg2:#0A1930; --card:#111A2E; --line:#233149;
+  --ink:#E6ECF5; --muted:#93A2BE; --cyan:#00D2A0; --za:#7FA8F5; --zb:#F3B94D;
+  --u:calc(100vw / 100);          /* 1u = 1% chiều rộng; mọi cỡ chữ/khoảng cách tính theo u nên TV nào cũng vừa */
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:linear-gradient(160deg,var(--bg1),var(--bg2));color:var(--ink);
+  font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.tv{height:100%;display:flex;flex-direction:column;padding:calc(var(--u)*1.6) calc(var(--u)*2.2);gap:calc(var(--u)*1.4)}
+
+header{display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:calc(var(--u)*1.2)}
+.brand img{width:calc(var(--u)*4.4);height:calc(var(--u)*4.4)}
+.b1{font-size:calc(var(--u)*2.6);font-weight:800;letter-spacing:.04em;line-height:1}
+.b2{font-size:calc(var(--u)*1.3);font-weight:800;color:var(--cyan);margin-top:calc(var(--u)*.3)}
+.badge{display:inline-block;background:#D97706;color:#fff;font-size:calc(var(--u)*.9);border-radius:calc(var(--u)*.4);padding:0 calc(var(--u)*.5);margin-left:calc(var(--u)*.4);vertical-align:calc(var(--u)*.1)}
+.clock{text-align:right}
+#clockTime{font-size:calc(var(--u)*3.4);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+#clockDate{font-size:calc(var(--u)*1.2);color:var(--muted);margin-top:calc(var(--u)*.3)}
+
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:calc(var(--u)*1.2)}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*1.2) calc(var(--u)*1.4);
+  border-top:calc(var(--u)*.35) solid var(--line)}
+.kpi.zA{border-top-color:var(--za)} .kpi.zB{border-top-color:var(--zb)} .kpi.ok{border-top-color:var(--cyan)}
+.k-label{font-size:calc(var(--u)*1.25);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.k-num{font-size:calc(var(--u)*6.6);font-weight:800;line-height:1.05;margin-top:calc(var(--u)*.4);font-variant-numeric:tabular-nums}
+.kpi.zA .k-num{color:var(--za)} .kpi.zB .k-num{color:var(--zb)} .kpi.ok .k-num{color:var(--cyan)}
+.k-sub{font-size:calc(var(--u)*1.2);color:var(--muted);min-height:calc(var(--u)*1.5);margin-top:calc(var(--u)*.2)}
+
+.main{flex:1;min-height:0;display:grid;grid-template-columns:1.7fr 1fr;gap:calc(var(--u)*1.2)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:calc(var(--u)*1.2);padding:calc(var(--u)*1.2) calc(var(--u)*1.5);
+  display:flex;flex-direction:column;min-height:0}
+.panel h2{margin:0 0 calc(var(--u)*.8);font-size:calc(var(--u)*1.5);font-weight:800;letter-spacing:.03em}
+
+/* biểu đồ cột: 14 line */
+.bars{flex:1;min-height:0;display:grid;grid-template-columns:repeat(14,1fr);gap:calc(var(--u)*.55);align-items:end;
+  padding-top:calc(var(--u)*2.2)}
+.bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.bar .v{font-size:calc(var(--u)*1.2);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-bottom:calc(var(--u)*.3);white-space:nowrap}
+.bar .col{width:100%;border-radius:calc(var(--u)*.5) calc(var(--u)*.5) 0 0;min-height:calc(var(--u)*.35);transition:height .6s ease}
+.bar.zA .col{background:var(--za)} .bar.zA .v{color:var(--za)}
+.bar.zB .col{background:var(--zb)} .bar.zB .v{color:var(--zb)}
+.bar .l{font-size:calc(var(--u)*1.2);font-weight:800;color:var(--muted);margin-top:calc(var(--u)*.5)}
+
+/* danh sách mã nhiều hàng chờ nhất */
+#topList{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between}
+.row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:calc(var(--u)*.15) calc(var(--u)*1);padding:calc(var(--u)*.25) 0}
+.row .n{font-size:calc(var(--u)*1.3);font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .t{font-size:calc(var(--u)*1.7);font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums}
+.row .meter{grid-column:1/-1;height:calc(var(--u)*.4);background:var(--line);border-radius:calc(var(--u)*.3);overflow:hidden}
+.row .meter i{display:block;height:100%;background:var(--cyan);border-radius:calc(var(--u)*.3)}
+.empty{margin:auto;text-align:center;color:var(--cyan);font-size:calc(var(--u)*2.4);font-weight:800}
+
+footer{display:flex;align-items:center;gap:calc(var(--u)*.7);font-size:calc(var(--u)*1.1);color:var(--muted)}
+.dot{width:calc(var(--u)*.9);height:calc(var(--u)*.9);border-radius:50%;background:var(--cyan)}
+.dot.err{background:#F26B7D}
