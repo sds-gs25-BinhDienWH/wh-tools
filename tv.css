@@ -14,7 +14,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 .logo{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 calc(var(--u)*1.6);background:#fff;color:var(--blue);
   font-size:calc(var(--u)*1.9);font-weight:900;letter-spacing:.02em}
 .title{padding-left:calc(var(--u)*1.6);font-size:calc(var(--u)*1.8);font-weight:800;letter-spacing:.02em}
-.date{margin-left:auto;padding-right:calc(var(--u)*1.6);font-size:calc(var(--u)*1.3);font-weight:700;opacity:.95}
+/* ngày + đồng hồ chạy từng giây ở góc phải trên */
+.clock{margin-left:auto;display:flex;align-items:baseline;gap:calc(var(--u)*1.2);padding-right:calc(var(--u)*1.6)}
+.cdate{font-size:calc(var(--u)*1.3);font-weight:700;opacity:.95}
+.ctime{font-size:calc(var(--u)*2.3);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 
 .sec-t{flex:none;display:flex;align-items:center;gap:calc(var(--u)*1.2);padding:calc(var(--u)*.45) calc(var(--u)*1.6);color:var(--blue);
   font-size:calc(var(--u)*1.15);font-weight:800;border-bottom:1px solid var(--line);background:#F9FAFB}

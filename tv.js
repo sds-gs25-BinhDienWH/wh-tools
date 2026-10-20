@@ -38,7 +38,9 @@ function render(d) {
   renderRing(d.actual.qty, d.plan.qty);
 
   const s = d.stats || {};
-  $('stWorking').textContent = fmt(s.working);
+  const pd = d.pending;
+  $('stPending').textContent = pd ? fmt(pd.total) : '–';
+  $('stPendingSub').textContent = pd ? 'PCS · khu A ' + fmt(pd.a) + ' · khu B ' + fmt(pd.b) : 'PCS';
   $('stJoined').textContent = fmt(s.joined);
   $('stItems').textContent = fmt(s.items);
   $('stAvg').textContent = s.workers ? fmt(Math.round(d.actual.qty / s.workers)) : '–';
@@ -74,6 +76,14 @@ async function load() {
     $('status').textContent = 'Mất kết nối, đang thử lại… (' + (e.message || e) + ')';
   }
 }
+
+// Đồng hồ góc phải trên chạy từng giây (giờ của máy đang mở TV)
+function tickClock() {
+  const d = new Date();
+  $('clockTime').textContent = d.toLocaleTimeString('vi-VN', { hour12: false });
+  if ($('date').textContent.indexOf('-') >= 0) $('date').textContent = d.toLocaleDateString('vi-VN'); // trước khi có ngày từ server
+}
+tickClock(); setInterval(tickClock, 1000);
 
 load(); setInterval(load, REFRESH_MS);
 setTimeout(() => location.reload(), RELOAD_MS);
