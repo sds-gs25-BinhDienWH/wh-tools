@@ -52,7 +52,7 @@ function testSetup() {
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-21 · dashboard SAMSUNG SDS: Plan/Actual + Top 5 năng suất';
+const VERSION = '2026-10-21b · dashboard COLD WH Daily Progress: Plan/Actual (PCS) + thống kê + Top 5 năng suất';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -173,11 +173,12 @@ function dashboard_(key) {
   const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
   if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('dash2');
+  const hit = cache.get('dash3');
   if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 20 giây
 
   const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
-  const res = { at: Date.now(), date: fmt(new Date(), 'dd/MM/yyyy'), plan: { qty: 0, items: 0 }, actual: { qty: 0, items: 0 }, top: [] };
+  const res = { at: Date.now(), date: fmt(new Date(), 'dd/MM/yyyy'), plan: { qty: 0, items: 0 }, actual: { qty: 0, items: 0 }, top: [],
+    stats: { working: 0, joined: 0, workers: 0, items: 0 } };
 
   // Plan: hai ô vàng trong tab "Plan"
   try {
@@ -192,22 +193,30 @@ function dashboard_(key) {
     if (sh && sh.getLastRow() > 1) {
       const n = Math.min(sh.getLastRow() - 1, 5000), first = sh.getLastRow() - n + 1;
       const vals = sh.getRange(first, 1, n, 11).getValues();             // cột A..K
-      const today = fmt(new Date(), 'yyyyMMdd');
-      const people = {};
+      const today = fmt(new Date(), 'yyyyMMdd'), recent = Date.now() - 70 * 60000;
+      const people = {}, working = {}, joined = {};
       vals.forEach(function (v) {
         if (!(v[0] instanceof Date) || fmt(v[0], 'yyyyMMdd') !== today) return;
-        if (String(v[7]) !== 'XONG ĐỦ') return;
-        const q = Number(v[10]) || 0, id = String(v[3]);
+        const status = String(v[7]), id = String(v[3]);
+        if (status === JOB_OPEN) {                                    // đang làm (quét trong 70 phút gần nhất)
+          if (v[0].getTime() > recent) { working[id] = 1; joined[id] = 1; }
+          return;
+        }
+        if (status !== 'XONG ĐỦ') return;
+        const q = Number(v[10]) || 0;
         res.actual.qty += q; res.actual.items++;
         const p = people[id] || (people[id] = { name: String(v[4]), qty: 0, items: 0 });
         p.qty += q; p.items++;
+        joined[id] = 1;
       });
       res.top = Object.keys(people).map(function (id) { return people[id]; })
         .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 5);
+      res.stats = { working: Object.keys(working).length, joined: Object.keys(joined).length,
+        workers: Object.keys(people).length, items: res.actual.items };
     }
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
 
-  cache.put('dash2', JSON.stringify(res), 20);
+  cache.put('dash3', JSON.stringify(res), 20);
   return res;
 }
 // ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------

@@ -1,57 +1,67 @@
-/* Dashboard SAMSUNG SDS: nền trắng, thanh xanh, vòng tiến độ Actual/Plan và Top 5 năng suất. */
+/* Dashboard COLD WH Daily Progress (SAMSUNG SDS): header nhỏ gọn, vòng tiến độ PCS, 4 ô thống kê, biểu đồ cột ngang top 5. */
 :root{
   --blue:#1428A0; --bar:#1F5FD8; --ink:#111827; --muted:#4B5563; --line:#D1D5DB; --track:#E5E7EB; --red:#C8102E;
   --green:#16A34A; --qty:#1F5FD8; --items:#F59E0B;
-  --u:calc(100vw / 100);   /* 1u = 1% chiều rộng: cỡ chữ/khoảng cách tính theo u nên TV nào cũng vừa */
+  /* 1u = 1% chiều rộng KHUNG 16:9. Lấy số nhỏ hơn giữa theo rộng và theo cao => cửa sổ/TV tỉ lệ nào cũng thấy ĐỦ, không bị cắt. */
+  --u:min(calc(100vw / 100), calc(100vh / 56.25));
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);font-family:"Segoe UI",Arial,Helvetica,sans-serif}
-.board{height:100%;display:flex;flex-direction:column}
+.board{width:calc(var(--u)*100);height:calc(var(--u)*56.25);margin:0 auto;display:flex;flex-direction:column}
 
-.head{display:flex;height:calc(var(--u)*6.2);border-bottom:2px solid #0b1f6b;flex:none}
-.logo{flex:0 0 calc(var(--u)*30);display:flex;align-items:center;padding-left:calc(var(--u)*2);color:var(--blue);
-  font-size:calc(var(--u)*3.6);font-weight:900;font-style:italic;letter-spacing:.01em}
-.title{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bar);color:#fff;
-  font-size:calc(var(--u)*3.4);font-weight:800;letter-spacing:.02em}
+/* header nhỏ: SAMSUNG SDS + COLD WH Daily Progress */
+.head{display:flex;align-items:center;height:calc(var(--u)*3.4);border-bottom:2px solid #0b1f6b;flex:none;background:var(--bar);color:#fff}
+.logo{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 calc(var(--u)*1.6);background:#fff;color:var(--blue);
+  font-size:calc(var(--u)*1.9);font-weight:900;font-style:italic;letter-spacing:.01em}
+.title{padding-left:calc(var(--u)*1.6);font-size:calc(var(--u)*1.8);font-weight:800;letter-spacing:.02em}
+.date{margin-left:auto;padding-right:calc(var(--u)*1.6);font-size:calc(var(--u)*1.3);font-weight:700;opacity:.95}
 
-.sec-t{flex:none;display:flex;align-items:center;gap:calc(var(--u)*1.2);padding:calc(var(--u)*.7) calc(var(--u)*2);color:var(--blue);
-  font-size:calc(var(--u)*1.6);font-weight:800;border-bottom:2px solid var(--line);background:#F9FAFB}
-.sec-t .lg{margin-left:auto;display:flex;align-items:center;gap:calc(var(--u)*.6);color:var(--ink);font-size:calc(var(--u)*1.3);font-weight:700}
-.sw{display:inline-block;width:calc(var(--u)*1.3);height:calc(var(--u)*1.3);border-radius:calc(var(--u)*.2);margin-left:calc(var(--u)*.8)}
+.sec-t{flex:none;display:flex;align-items:center;gap:calc(var(--u)*1.2);padding:calc(var(--u)*.45) calc(var(--u)*1.6);color:var(--blue);
+  font-size:calc(var(--u)*1.15);font-weight:800;border-bottom:1px solid var(--line);background:#F9FAFB}
+.sec-t .lg{margin-left:auto;display:flex;align-items:center;gap:calc(var(--u)*.5);color:var(--ink);font-size:calc(var(--u)*1.05);font-weight:700}
+.sw{display:inline-block;width:calc(var(--u)*1.1);height:calc(var(--u)*1.1);border-radius:calc(var(--u)*.2);margin-left:calc(var(--u)*.8)}
 .sw.q{background:var(--qty)} .sw.m{background:var(--items)}
 
-/* hai vòng tiến độ */
-.prog{flex:1.15;min-height:0;display:grid;grid-template-columns:1fr 1fr}
+/* trên: vòng tiến độ PCS (trái) + 4 ô thống kê (phải) */
+.prog{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr}
 .ring{display:flex;align-items:center;justify-content:center;gap:calc(var(--u)*2.4);padding:calc(var(--u)*.8) calc(var(--u)*1.5)}
-.ring + .ring{border-left:1px solid var(--line)}
-.ring svg{flex:none;height:94%;max-height:calc(var(--u)*17.5);aspect-ratio:1}
+.ring svg{flex:none;height:92%;max-height:calc(var(--u)*17);aspect-ratio:1}
 .r-track{fill:none;stroke:var(--track);stroke-width:16}
 .r-bar{fill:none;stroke:var(--green);stroke-width:16;stroke-linecap:butt;transition:stroke-dasharray .8s ease}
 .r-pct{font-size:34px;font-weight:800;fill:var(--ink);text-anchor:middle}
 .r-sub{font-size:11px;font-weight:700;fill:var(--muted);text-anchor:middle}
 .r-info{min-width:0}
-.r-name{color:var(--blue);font-size:calc(var(--u)*1.7);font-weight:800;margin-bottom:calc(var(--u)*.6)}
-.r-row{display:flex;align-items:baseline;gap:calc(var(--u)*.8);margin:calc(var(--u)*.15) 0}
-.r-row .l{color:var(--muted);font-size:calc(var(--u)*1.35);font-weight:800;min-width:calc(var(--u)*6.2)}
+.r-row{display:flex;align-items:baseline;gap:calc(var(--u)*.8);margin:calc(var(--u)*.2) 0}
+.r-row .l{color:var(--muted);font-size:calc(var(--u)*1.2);font-weight:800;min-width:calc(var(--u)*5.6)}
 .r-row .v{font-size:calc(var(--u)*3.2);font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
 .r-row.act .v{color:var(--green)} .r-row.left .v{color:var(--red)}
-.r-note{color:var(--muted);font-size:calc(var(--u)*1.2);margin-top:calc(var(--u)*.4)}
+.r-note{color:var(--muted);font-size:calc(var(--u)*1.1);margin-top:calc(var(--u)*.4)}
 
-/* Top 5 năng suất: mỗi bạn 2 thanh con (số lượng, số itemcode) */
-.top{flex:1.1;min-height:0;display:grid;grid-template-columns:repeat(5,1fr);gap:calc(var(--u)*1.2);padding:calc(var(--u)*.8) calc(var(--u)*2) calc(var(--u)*.6)}
-.grp{display:flex;flex-direction:column;min-width:0}
-.bars{flex:1;min-height:0;display:flex;align-items:flex-end;justify-content:center;gap:calc(var(--u)*.7);border-bottom:2px solid var(--line);padding-top:calc(var(--u)*2.4)}
-.bw{width:38%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:0}
-.bw .n{font-size:calc(var(--u)*1.7);font-weight:800;font-variant-numeric:tabular-nums;margin-bottom:calc(var(--u)*.2);white-space:nowrap}
-.bw .b{width:100%;min-height:calc(var(--u)*.25);transition:height .8s ease;border-radius:calc(var(--u)*.3) calc(var(--u)*.3) 0 0}
-.bw.q .b{background:var(--qty)} .bw.q .n{color:var(--qty)}
-.bw.m .b{background:var(--items)} .bw.m .n{color:#B45309}
-.gn{text-align:center;padding-top:calc(var(--u)*.5);font-size:calc(var(--u)*1.55);font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gn .rk{display:inline-block;min-width:calc(var(--u)*2.2);margin-right:calc(var(--u)*.5);border-radius:calc(var(--u)*.4);background:var(--blue);color:#fff;font-size:calc(var(--u)*1.3)}
-.empty{grid-column:1/-1;margin:auto;color:var(--muted);font-size:calc(var(--u)*2.2);font-weight:700}
+.stats{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:calc(var(--u)*.9);padding:calc(var(--u)*1) calc(var(--u)*1.6);border-left:1px solid var(--line)}
+.st{border:1px solid var(--line);border-top:calc(var(--u)*.3) solid var(--bar);border-radius:calc(var(--u)*.5);padding:calc(var(--u)*.6) calc(var(--u)*1.1);
+  display:flex;flex-direction:column;justify-content:center;min-width:0}
+.sl{color:var(--blue);font-size:calc(var(--u)*1.05);font-weight:800}
+.sv{font-size:calc(var(--u)*3.6);font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.su{color:var(--muted);font-size:calc(var(--u)*1);font-weight:700}
 
-.foot{flex:none;display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.5) calc(var(--u)*1.5);border-top:1px solid var(--line);
-  font-size:calc(var(--u)*1.1);color:var(--muted)}
+/* dưới: biểu đồ cột NGANG, mỗi dòng một bạn, 2 thanh con (số lượng, số itemcode) */
+.top{flex:1.25;min-height:0;display:flex;flex-direction:column;padding:calc(var(--u)*.5) calc(var(--u)*1.6) calc(var(--u)*.3)}
+.hr{flex:1 1 0;min-height:0;display:grid;grid-template-columns:calc(var(--u)*19) 1fr;align-items:center;gap:calc(var(--u)*.8);border-bottom:1px solid var(--line)}
+.hr:last-child{border-bottom:0}
+.who{display:flex;align-items:center;gap:calc(var(--u)*.6);font-size:calc(var(--u)*1.45);font-weight:800;min-width:0}
+.who .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk{flex:none;min-width:calc(var(--u)*2);text-align:center;border-radius:calc(var(--u)*.4);background:var(--blue);color:#fff;font-size:calc(var(--u)*1.15)}
+.hb{display:flex;flex-direction:column;gap:calc(var(--u)*.25);padding:calc(var(--u)*.25) 0}
+.bl{display:flex;align-items:center;gap:calc(var(--u)*.6)}
+.bl .track{flex:1;height:calc(var(--u)*1.35);background:#F3F4F6}
+.bl i{display:block;height:100%;min-width:calc(var(--u)*.2);transition:width .8s ease}
+.bl.q i{background:var(--qty)} .bl.m i{background:var(--items)}
+.bl b{flex:0 0 calc(var(--u)*6.5);font-size:calc(var(--u)*1.4);font-variant-numeric:tabular-nums}
+.bl.q b{color:var(--qty)} .bl.m b{color:#B45309}
+.empty{margin:auto;color:var(--muted);font-size:calc(var(--u)*1.8);font-weight:700}
+
+.foot{flex:none;display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.35) calc(var(--u)*1.5);border-top:1px solid var(--line);
+  font-size:calc(var(--u)*.95);color:var(--muted)}
 .foot .r{margin-left:auto;font-style:italic}
-.dot{width:calc(var(--u)*.8);height:calc(var(--u)*.8);border-radius:50%;background:#16a34a}
+.dot{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:#16a34a}
 .dot.err{background:#dc2626}

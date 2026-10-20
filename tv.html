@@ -4,28 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>SAMSUNG SDS · WH Dashboard</title>
+<title>SAMSUNG SDS · COLD WH Daily Progress</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
-<link rel="stylesheet" href="tv.css?v=4">
+<link rel="stylesheet" href="tv.css?v=5">
 </head>
 <body>
 <div class="board">
   <div class="head">
     <div class="logo">SAMSUNG SDS</div>
-    <div class="title">WH DAILY PROGRESS</div>
+    <div class="title">COLD WH Daily Progress</div>
+    <div class="date" id="date">--/--/----</div>
   </div>
 
-  <div class="sec-t">TIẾN ĐỘ HÔM NAY · <span id="date">--/--/----</span> &nbsp;·&nbsp; ACTUAL / PLAN</div>
+  <div class="sec-t">TIẾN ĐỘ HÔM NAY · ACTUAL / PLAN (PCS)</div>
   <div class="prog">
-    <div class="ring" id="ringQty"></div>
-    <div class="ring" id="ringItems"></div>
+    <div class="ring" id="ring"></div>
+    <div class="stats">
+      <div class="st"><div class="sl">ĐANG LÀM LÚC NÀY</div><div class="sv" id="stWorking">–</div><div class="su">nhân viên</div></div>
+      <div class="st"><div class="sl">THAM GIA HÔM NAY</div><div class="sv" id="stJoined">–</div><div class="su">nhân viên</div></div>
+      <div class="st"><div class="sl">MÃ ĐÃ HOÀN THÀNH</div><div class="sv" id="stItems">–</div><div class="su">itemcode</div></div>
+      <div class="st"><div class="sl">TRUNG BÌNH / NGƯỜI</div><div class="sv" id="stAvg">–</div><div class="su">PCS</div></div>
+    </div>
   </div>
 
-  <div class="sec-t">NĂNG SUẤT TOP 5 <span class="lg"><i class="sw q"></i>Số lượng <i class="sw m"></i>Số itemcode</span></div>
+  <div class="sec-t">NĂNG SUẤT TOP 5 <span class="lg"><i class="sw q"></i>Số lượng (PCS) <i class="sw m"></i>Số itemcode</span></div>
   <div class="top" id="top"></div>
 
   <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
 </div>
-<script src="tv.js?v=4"></script>
+<script src="tv.js?v=5"></script>
 </body>
 </html>
