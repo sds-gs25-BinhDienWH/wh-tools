@@ -52,7 +52,7 @@ function testSetup() {
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-21c · dashboard COLD WH Daily Progress: Plan/Actual (PCS) + hàng chờ còn lại + Top 5 năng suất';
+const VERSION = '2026-10-21d · dashboard COLD WH Daily Progress: Plan/Actual (PCS) + hàng chờ còn lại + năng suất tất cả nhân viên';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -173,7 +173,7 @@ function dashboard_(key) {
   const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
   if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('dash4');
+  const hit = cache.get('dash5');
   if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 20 giây
 
   const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
@@ -203,8 +203,9 @@ function dashboard_(key) {
         const p = people[id] || (people[id] = { name: String(v[4]), qty: 0, items: 0 });
         p.qty += q; p.items++;
       });
+      // Tất cả nhân viên đã hoàn thành mã hôm nay, xếp theo số lượng giảm dần (tối đa 30 người)
       res.top = Object.keys(people).map(function (id) { return people[id]; })
-        .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 5);
+        .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 30);
       res.stats = { joined: Object.keys(people).length, workers: Object.keys(people).length, items: res.actual.items };
     }
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
@@ -226,7 +227,7 @@ function dashboard_(key) {
     }
   } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
 
-  cache.put('dash4', JSON.stringify(res), 20);
+  cache.put('dash5', JSON.stringify(res), 20);
   return res;
 }
 // ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------

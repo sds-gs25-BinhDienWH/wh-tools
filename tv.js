@@ -7,6 +7,7 @@
 const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyV5otbjq-5N00CMUl-7mbyC36Ztqf87C8IIzaIOiRjqwV_HGsKF7akzkFIjBcBO-VZNQ/exec';
 const REFRESH_MS = 30000;          // tải lại số liệu mỗi 30 giây
 const RELOAD_MS = 6 * 3600 * 1000; // tải lại cả trang mỗi 6 giờ để TV để cả tuần vẫn lấy bản mới
+const MAX_PEOPLE = 24;             // số nhân viên tối đa hiện trên màn hình (2 cột x 12 dòng); nhiều hơn thì ghi "và N người khác"
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -45,10 +46,20 @@ function render(d) {
   $('stItems').textContent = fmt(s.items);
   $('stAvg').textContent = s.workers ? fmt(Math.round(d.actual.qty / s.workers)) : '–';
 
-  // Top 5: biểu đồ cột ngang, mỗi người 2 thanh con. Mỗi loại tính theo thang riêng (người cao nhất của loại đó = thanh dài nhất)
-  const top = d.top || [];
+  // Tất cả nhân viên, chia ĐÔI thành 2 cột (nửa đầu bên trái, nửa sau bên phải), mỗi người 2 thanh con.
+  // Mỗi loại thanh tính theo thang riêng (người cao nhất của loại đó = thanh dài nhất). Hiện tối đa MAX_PEOPLE người.
+  const all = d.top || [];
+  const top = all.slice(0, MAX_PEOPLE);
+  const rows = Math.max(1, Math.ceil(top.length / 2));                 // số dòng mỗi cột
+  const el = $('top');
+  // càng nhiều người thì chữ và thanh càng nhỏ để vừa một màn hình
+  const fs = rows <= 5 ? 1.45 : rows <= 7 ? 1.3 : rows <= 10 ? 1.1 : rows <= 12 ? 0.95 : 0.85;
+  el.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  el.style.setProperty('--fs', `calc(var(--u) * ${fs})`);
+  el.style.setProperty('--bh', `calc(var(--u) * ${Math.min(1.35, fs * 0.8)})`);
+  $('topNote').textContent = all.length > top.length ? `và ${all.length - top.length} người khác` : '';
   const mq = Math.max(1, ...top.map(t => t.qty)), mi = Math.max(1, ...top.map(t => t.items));
-  $('top').innerHTML = top.length ? top.map((t, i) => `<div class="hr">
+  el.innerHTML = top.length ? top.map((t, i) => `<div class="hr">
       <div class="who" title="${esc(t.name)}"><span class="rk">${i + 1}</span><span class="nm">${esc(t.name)}</span></div>
       <div class="hb">
         <div class="bl q"><div class="track"><i style="width:${Math.max(Math.round(t.qty / mq * 100), 1)}%"></i></div><b>${fmt(t.qty)}</b></div>
@@ -56,7 +67,6 @@ function render(d) {
       </div></div>`).join('')
     : '<div class="empty">Chưa có mã nào hoàn thành hôm nay</div>';
 }
-
 async function load() {
   try {
     const ctl = new AbortController();
