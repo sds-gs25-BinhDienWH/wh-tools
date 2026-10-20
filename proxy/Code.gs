@@ -42,12 +42,17 @@ const LOG_ACTION = {
  */
 function testSetup() {
   const n = Object.keys(empMap_(true)).length;
-  logSs_(); // kiểm tra file nhật ký mở được
-  console.log('OK: đọc được ' + n + ' nhân viên từ Google Sheet.');
+  const book = logSs_();
+  jobSheet_();                                   // tạo tab "Điều hàng" nếu chưa có
+  appendLog_([new Date(), 'TEST', 'Chạy thử testSetup', 'THỬ GHI LOG', '', '', 'OK', '', '', 'Dòng thử, xoá được']); // tạo tab "Log" + 1 dòng thử
+  console.log('OK: đọc được ' + n + ' nhân viên. Nhật ký được ghi vào FILE: "' + book.getName() + '"\n' + book.getUrl() +
+    '\nCác tab: "' + LOG_SHEET + '" (đăng nhập, quét sai...) và "' + JOB_SHEET + '" (mỗi mã hàng một dòng).');
   return n;
 }
 
-function doGet() { return out({ ok: true, allow: Object.keys(ALLOW) }); }
+// Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
+const VERSION = '2026-10-20b · điều hàng: mỗi mã một dòng, mã phiên = Họ tên_Mã hàng_giờ bắt đầu';
+function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
   try {
@@ -70,8 +75,13 @@ function doPost(e) {
     const r = fetchUpstream_(method, path, body, key, ALLOW[key]);
 
     // Ghi log kể cả khi kết quả lấy từ cache, để không sót lượt nào
-    if (key === ITEM_KEY) logItemScan_(emp, req.body, r, req.job);
-    else if (LOG_ACTION[key]) logAction_(emp, LOG_ACTION[key], req.body, r);
+    if (key === ITEM_KEY) {
+      const job = logItemScan_(emp, req.body, r);
+      if (job && r.ok) {
+        // Trả kèm mã phiên (Họ tên_Mã hàng_giờ bắt đầu) để app gửi lại lúc Hoàn thành
+        try { const o = JSON.parse(r.text); o.__job = job; return out(o); } catch (e) { /* trả nguyên văn bên dưới */ }
+      }
+    } else if (LOG_ACTION[key]) logAction_(emp, LOG_ACTION[key], req.body, r);
 
     if (!r.ok) return out({ __error: r.error });
     return raw(r.text);
@@ -116,23 +126,20 @@ function logout_(id, note) {
 }
 
 // Công nhân bấm "Hoàn thành" (hoặc "Huỷ mã") một mã hàng ở Điều hàng: đóng dòng đã mở lúc quét.
-// req = { emp, job (mã phiên do app tạo lúc quét), itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA, chỉ dùng
-//         khi không tìm thấy dòng lúc quét), done:[{l,q}], rest:[{l,q}],
+// req = { emp, job (mã phiên do proxy trả về lúc quét), itemCode, itemName, startedAt, endedAt (ms, giờ máy PDA, chỉ dùng
+//         khi không tìm thấy dòng lúc quét), done:[{l,q}] (các line đã chốt, dùng để cộng số lượng đã điều),
 //         cancel (true nếu huỷ), reason ('cancel' | 'timeout' = quá 1 giờ | 'other' = người khác đăng nhập) }
-// done = các line đã xong, rest = các line còn hàng chờ nhưng chưa đánh dấu xong.
 function complete_(req) {
   const emp = findEmp_(req.emp);
   if (!emp) return { __error: 'NO_EMP: Chưa đăng nhập hoặc mã nhân viên không có trong danh sách.' };
-  const lst = function (x) { return Array.isArray(x) ? x.slice(0, 14) : []; };
-  const fmt = function (a) { return a.map(function (d) { return String(d.l).slice(0, 4) + '=' + (Number(d.q) || 0); }).join(', '); };
-  const done = lst(req.done), rest = lst(req.rest);
+  const done = Array.isArray(req.done) ? req.done.slice(0, 14) : [];
   const cancel = !!req.cancel;
   const status = cancel
     ? (req.reason === 'timeout' ? 'QUÁ 1 GIỜ' : (req.reason === 'other' ? 'NGƯỜI KHÁC VÀO' : 'ĐÃ HUỶ'))
-    : (rest.length ? 'XONG MỘT PHẦN' : 'XONG ĐỦ');
+    : 'XONG ĐỦ'; // app bắt buộc chốt đủ mọi line mới cho hoàn thành
   const qty = cancel ? '' : done.reduce(function (s, d) { return s + (Number(d.q) || 0); }, 0); // huỷ thì chưa tính là đã điều
   try {
-    closeJob_(emp, req, status, fmt(done), fmt(rest), qty);
+    closeJob_(emp, req, status, qty);
   } catch (e) {
     console.error('Đóng dòng điều hàng lỗi: ' + e); // không chặn công nhân
   }
@@ -201,9 +208,13 @@ function empMap_(force) {
 
 // ---------- Điều hàng: mỗi mã hàng MỘT dòng (tab JOB_SHEET) ----------
 // Cột: A Bắt đầu | B Kết thúc | C Thời lượng (giây) | D Mã NV | E Họ tên | F Mã hàng | G Tên hàng | H Trạng thái
-//      | I Chờ khu A | J Chờ khu B | K Line đã xong | L Line chưa xong | M SL đã điều | N Mã phiên (kỹ thuật, để cập nhật đúng dòng)
-// Trạng thái: ĐANG LÀM -> XONG ĐỦ | XONG MỘT PHẦN | ĐÃ HUỶ | QUÁ 1 GIỜ | NGƯỜI KHÁC VÀO | BỎ DỞ (KHÔNG BÁO)
+//      | I Chờ khu A | J Chờ khu B | K SL đã điều | L Mã phiên
+// Mã phiên = Họ tên + "_" + Mã hàng + "_" + giờ bắt đầu (yyyyMMddHHmmss, giờ Việt Nam). Proxy tạo lúc quét và trả về cho app
+// để lúc Hoàn thành app gửi lại đúng mã này, proxy tìm đúng dòng mà đóng.
+// Trạng thái: ĐANG LÀM -> XONG ĐỦ | ĐÃ HUỶ | QUÁ 1 GIỜ | NGƯỜI KHÁC VÀO | BỎ DỞ (KHÔNG BÁO)
+// (App bắt buộc chốt đủ mọi line mới cho hoàn thành, nên không còn cột "Line đã xong / chưa xong".)
 const JOB_OPEN = 'ĐANG LÀM';
+const TZ = 'Asia/Ho_Chi_Minh';
 
 function jobSheet_() {
   const book = logSs_();
@@ -211,20 +222,25 @@ function jobSheet_() {
   if (!sh) {
     sh = book.insertSheet(JOB_SHEET);
     sh.appendRow(['Bắt đầu', 'Kết thúc', 'Thời lượng (giây)', 'Mã NV', 'Họ tên', 'Mã hàng', 'Tên hàng', 'Trạng thái',
-      'Chờ khu A', 'Chờ khu B', 'Line đã xong', 'Line chưa xong', 'SL đã điều', 'Mã phiên']);
+      'Chờ khu A', 'Chờ khu B', 'SL đã điều', 'Mã phiên']);
     sh.setFrozenRows(1);
     sh.getRange('A:B').setNumberFormat('dd/MM/yyyy HH:mm:ss');
-    ['D:D', 'F:F', 'N:N'].forEach(function (r) { sh.getRange(r).setNumberFormat('@'); }); // giữ nguyên số 0 đầu, không thành số khoa học
+    ['D:D', 'F:F', 'L:L'].forEach(function (r) { sh.getRange(r).setNumberFormat('@'); }); // giữ nguyên số 0 đầu, không thành số khoa học
+  } else if (sh.getLastColumn() >= 14 && String(sh.getRange(1, 14).getValue()) === 'Mã phiên') {
+    // Tab tạo từ bản cũ (có 2 cột "Line đã xong", "Line chưa xong" ở K, L): xoá 2 cột đó, dữ liệu còn lại tự dịch sang trái
+    sh.deleteColumns(11, 2);
   }
   return sh;
 }
 
 // Gọi mỗi lần tra một mã hàng ở Điều hàng. Chỉ mã có hàng chờ thật mới mở một dòng ĐANG LÀM.
-function logItemScan_(emp, body, r, jobId) {
+// Trả về { id } (mã phiên) nếu đã mở dòng, ngược lại null.
+function logItemScan_(emp, body, r) {
   try {
     const itemCode = body && body.ItemCode ? String(body.ItemCode).slice(0, 60) : '';
     const logOther = function (action, result, note) {
       safeLog_([new Date(), emp.id, emp.name, action, itemCode, '', result, '', '', note || '']);
+      return null;
     };
     if (!r.ok) return logOther('QUÉT LỖI', 'LỖI', String(r.error || '').slice(0, 200));
     const j = JSON.parse(r.text);
@@ -235,16 +251,19 @@ function logItemScan_(emp, body, r, jobId) {
       if (String(d.Line).indexOf('A') === 0) a += q; else if (String(d.Line).indexOf('B') === 0) b += q;
     });
     if (a + b <= 0) return logOther('QUÉT HẾT HÀNG CHỜ', 'KHÔNG CÒN HÀNG', String(j.ItemName || '').slice(0, 100));
-    if (!jobId) return logOther('ĐIỀU HÀNG (BẢN CŨ)', 'OK', String(j.ItemName || '').slice(0, 100)); // app bản cũ chưa gửi mã phiên
+    const now = new Date();
+    const id = (emp.name + '_' + itemCode + '_' + Utilities.formatDate(now, TZ, 'yyyyMMddHHmmss')).slice(0, 120);
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
     try {
-      jobSheet_().appendRow([new Date(), '', '', emp.id, emp.name, itemCode, String(j.ItemName || '').slice(0, 100),
-        JOB_OPEN, a, b, '', '', '', String(jobId).slice(0, 40)]);
+      jobSheet_().appendRow([now, '', '', emp.id, emp.name, itemCode, String(j.ItemName || '').slice(0, 100),
+        JOB_OPEN, a, b, '', id]);
     } finally { lock.releaseLock(); }
     closeStaleJobs_();
+    return { id: id };
   } catch (e) {
     console.error('Ghi dòng điều hàng lỗi: ' + e); // không chặn việc tra cứu của công nhân
+    return null;
   }
 }
 
@@ -267,17 +286,17 @@ function closeStaleJobs_() {
   });
 }
 
-// Đóng dòng đã mở lúc quét (điền giờ kết thúc, thời lượng, trạng thái, line đã xong).
+// Đóng dòng đã mở lúc quét (điền giờ kết thúc, thời lượng, trạng thái, số lượng đã điều).
 // Giờ bắt đầu/kết thúc đều là giờ của server nên không phụ thuộc đồng hồ PDA.
-function closeJob_(emp, req, status, doneText, restText, qty) {
+function closeJob_(emp, req, status, qty) {
   const lock = LockService.getScriptLock();
   lock.waitLock(5000);
   try {
     const sh = jobSheet_();
-    const jobId = String(req.job || '').slice(0, 40);
+    const jobId = String(req.job || '').slice(0, 120);
     let row = 0;
     if (jobId) {
-      const hit = sh.getRange('N:N').createTextFinder(jobId).matchEntireCell(true).findNext();
+      const hit = sh.getRange('L:L').createTextFinder(jobId).matchEntireCell(true).findNext();
       if (hit) row = hit.getRow();
     }
     const now = new Date();
@@ -287,17 +306,16 @@ function closeJob_(emp, req, status, doneText, restText, qty) {
       const sec = start instanceof Date ? Math.round((now - start) / 1000) : '';
       sh.getRange(row, 2, 1, 2).setValues([[now, sec]]);                          // B Kết thúc, C Thời lượng
       sh.getRange(row, 8).setValue(status);                                       // H Trạng thái
-      sh.getRange(row, 11, 1, 3).setValues([[doneText, restText, qty]]);          // K, L, M
+      sh.getRange(row, 11).setValue(qty);                                         // K SL đã điều
     } else {
       // Không thấy dòng lúc quét (ghi lúc quét bị lỗi, hoặc app bản cũ): ghi một dòng đầy đủ bằng giờ máy PDA
       const s = new Date(Number(req.startedAt)), e = new Date(Number(req.endedAt));
       const ok = !isNaN(s) && !isNaN(e) && e >= s;
       sh.appendRow([ok ? s : now, ok ? e : now, ok ? Math.round((e - s) / 1000) : '', emp.id, emp.name,
-        String(req.itemCode || '').slice(0, 60), String(req.itemName || '').slice(0, 100), status, '', '', doneText, restText, qty, jobId]);
+        String(req.itemCode || '').slice(0, 60), String(req.itemName || '').slice(0, 100), status, '', '', qty, jobId]);
     }
   } finally { lock.releaseLock(); }
 }
-
 // ---------- Nhật ký chung (tab Log): đăng nhập, đăng xuất, quét sai, kiểm hàng, ghép PAXD ----------
 // Cột: Thời gian | Mã NV | Họ tên | Hành động | Mã hàng | Tên hàng | Kết quả | Chờ khu A | Chờ khu B | Ghi chú
 function logAction_(emp, action, body, r) {

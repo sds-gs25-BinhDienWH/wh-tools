@@ -65,11 +65,11 @@ const proxyFetch = (base, payload, signal) => fetch(base, { method: 'POST',
   headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal });
 
 // Mọi lệnh gọi đều kèm mã nhân viên đang đăng nhập; proxy kiểm tra và ghi log theo người đó
-async function api(method, path, body, emp = S.emp && S.emp.id, job = null) {
+async function api(method, path, body, emp = S.emp && S.emp.id) {
   const base = baseOrThrow();
   try {
     return await request(signal => {
-      if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null, job }, signal);
+      if (isProxy(base)) return proxyFetch(base, { method, path, body: body || null, emp: emp || null }, signal);
       if (method === 'GET') return fetch(base + path, { signal });
       return fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), signal });
     });
@@ -388,16 +388,16 @@ async function lookupItem(raw) {
   const out = $('#moveOut');
   out.innerHTML = loading;
   S.work = null;
-  const job = newJobId(); // mã phiên: proxy dùng để mở dòng lúc quét và đóng đúng dòng đó lúc Hoàn thành
   try {
-    const j = await api('POST', '/pda/itemPending', { ItemCode: code }, S.emp && S.emp.id, job);
+    const j = await api('POST', '/pda/itemPending', { ItemCode: code });
     if (!j || !Array.isArray(j.Details)) throw new Error('Không tìm thấy mã hàng');
     const q = LINES.map(() => 0);
     for (const d of j.Details) {
       const k = LINES.indexOf(String(d.Line || '').replace('-', ''));
       if (k >= 0) q[k] = Number(d.Quantity) || 0;
     }
-    // Bắt đầu tính giờ từ lúc quét mã (lúc có kết quả)
+    // Mã phiên do proxy tạo (Họ tên_Mã hàng_giờ bắt đầu) và trả về trong __job; proxy cũ/chạy thẳng thì dùng mã dự phòng
+    const job = (j.__job && j.__job.id) || newJobId();
     S.work = { emp: S.emp.id, job, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
     out.innerHTML = '';
     jobStore.save();
@@ -417,7 +417,6 @@ const WORK_TTL_MS = 60 * 60000; // mã làm dở được giữ trên máy tối
 const HOLD_UNDO_MS = 1500;      // phải giữ ô đã chốt chừng này mới bỏ chọn được
 const HOLD_CANCEL_MS = 2000;    // phải giữ nút Huỷ mã chừng này mới huỷ
 
-const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
 const todoOf = w => w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
 const snap = w => ({ emp: w.emp, job: w.job, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
 
@@ -493,13 +492,12 @@ function renderWork() {
       <div class="ws-grid">${ks.map(k => `<button type="button" class="ws-cell ${cls}" data-k="${k}" aria-pressed="false"><small>${LINES[k]}</small><b>${w.q[k]}</b></button>`).join('')}</div>`;
   };
   $('#wsBody').innerHTML = `<div class="ws-name">${esc(w.name)}</div>
-    <div class="ws-meta">${esc(w.code)} · Bắt đầu ${hhmmss(w.startedAt)} · Tổng ${sum(w.q)}</div>
+    <div class="ws-meta">${esc(w.code)} · Tổng ${sum(w.q)}</div>
     ${zone('KHU A', 'zA', 0)}${zone('KHU B', 'zB', 7)}
-    <p class="hint" style="margin-top:16px">Chạm line đã làm xong để chốt. Chốt rồi muốn bỏ thì <b>giữ ô 1,5 giây</b>.
-      Làm xong hết thì bấm <b>Hoàn thành</b>. Quét nhầm mã thì giữ nút <b>Huỷ mã</b> 2 giây.</p>`;
+    <p class="hint" style="margin-top:16px">Chạm từng line đã làm xong để chốt. <b>Phải chốt đủ tất cả các line</b> thì mới bấm được Hoàn thành.
+      Chốt nhầm muốn bỏ thì <b>giữ ô 1,5 giây</b>. Quét nhầm mã thì giữ nút <b>Huỷ mã</b> 2 giây.</p>`;
   $('#wsBody').scrollTop = 0;
   updateWorkUI();
-  $('#workTimer').textContent = mmss(Date.now() - w.startedAt);
   openWork();
 }
 
@@ -514,7 +512,7 @@ function updateWorkUI() {
   });
   const n = todoOf(w).length;
   const bd = $('#btnDone');
-  bd.disabled = !w.done.size || w.sending;
+  bd.disabled = w.done.size !== n || w.sending; // bắt buộc chốt đủ MỌI line mới hoàn thành được
   bd.textContent = w.sending ? 'Đang ghi…' : `Hoàn thành (${w.done.size}/${n})`;
   $('#btnAll').disabled = w.sending || w.done.size === n;
 }
@@ -558,7 +556,7 @@ function cancelHold() {
 
 async function completeWork() {
   const w = S.work;
-  if (!w || w.sending || !w.done.size) return;
+  if (!w || w.sending || w.done.size !== todoOf(w).length) return; // chưa chốt đủ line thì không cho hoàn thành
   const endedAt = Date.now();
   const pick = ks => ks.map(k => ({ l: LINES[k], q: w.q[k] }));
   const all = todoOf(w);
@@ -572,7 +570,7 @@ async function completeWork() {
     }
     $('#moveOut').innerHTML = `<div class="card done-box"><div class="name">✓ Đã ghi hoàn thành</div>
       <div class="meta">${esc(w.name)} · ${esc(w.code)}</div>
-      <div class="totals"><span>Mất <b>${mmss(endedAt - w.startedAt)}</b></span><span>${doneKs.length}/${all.length} line</span>${restKs.length ? '<span class="zB">Còn ' + restKs.length + ' line chưa xong</span>' : ''}</div>
+      <div class="totals"><span>${doneKs.length}/${all.length} line</span></div>
       ${isProxy(base) ? '' : '<p class="hint">Chế độ thử (không có proxy): chưa ghi vào sổ nhật ký.</p>'}</div>`;
     S.work = null; jobStore.clear();
     closeWork();
@@ -746,8 +744,6 @@ function init() {
     if (skipPop) { skipPop = false; return; }
     if (!ws.hidden) { try { history.pushState({ work: 1 }, ''); } catch { /* bỏ qua */ } toast('Làm xong thì bấm Hoàn thành để thoát'); }
   });
-  // Đồng hồ đếm thời gian của mã đang làm (chỉ cập nhật số, không vẽ lại cả khối)
-  setInterval(() => { const t = $('#workTimer'); if (t && S.work) t.textContent = mmss(Date.now() - S.work.startedAt); }, 1000);
   // PDA dùng chung: bỏ máy quá lâu thì tự đăng xuất, tránh người sau thao tác mà ghi nhầm tên người trước.
   // Chạm màn hình hoặc quét/gõ phím đều tính là còn làm việc (tự tải ngầm thì không).
   ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, touchEmp, true));
