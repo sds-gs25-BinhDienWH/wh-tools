@@ -1,52 +1,42 @@
 'use strict';
-// Bảng theo dõi trên TV. Chỉ hiện số liệu CHUNG của cả kho: không tên người, không thời gian làm việc.
-// Mở: https://<trang>/tv.html   (nếu proxy có DASH_KEY thì thêm  #key=<khoá>  vào cuối địa chỉ)
+// Bảng trạng thái kho trên TV. Chỉ hiện số liệu CHUNG của cả kho: không tên người, không thời gian làm việc.
+// Mở: https://<trang>/tv.html#key=<DASH_KEY>   (nếu proxy đã đặt DASH_KEY thì phải có #key=...)
 
 // Phải giống PROXY_URL trong app.js (đổi proxy thì sửa cả hai chỗ)
 const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyV5otbjq-5N00CMUl-7mbyC36Ztqf87C8IIzaIOiRjqwV_HGsKF7akzkFIjBcBO-VZNQ/exec';
 const REFRESH_MS = 30000;          // tải lại số liệu mỗi 30 giây
 const RELOAD_MS = 6 * 3600 * 1000; // tải lại cả trang mỗi 6 giờ để TV để cả tuần vẫn lấy bản mới
-const LINES = ['A01','A02','A03','A04','A05','A06','A07','B08','B09','B10','B11','B12','B13','B14'];
+const LINES_B = ['B08','B09','B10','B11','B12','B13','B14'];
+const LINES_A = ['A01','A02','A03','A04','A05','A06','A07'];
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const hashKey = new URLSearchParams(location.hash.replace(/^#/, '')).get('key');
-const KEY = hashKey || params.get('key') || '';
+const KEY = new URLSearchParams(location.hash.replace(/^#/, '')).get('key') || params.get('key') || '';
 const BASE = params.get('api') || PROXY_URL;   // ?api=... chỉ để thử
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const fmt = n => Number(n || 0).toLocaleString('vi-VN');
+const label = l => l[0] + '-' + l.slice(1);    // B08 -> B-08, đúng kiểu bảng cũ
 
-function tickClock() {
-  const d = new Date();
-  $('clockTime').textContent = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  $('clockDate').textContent = d.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+function rowsHtml(names, lines, max) {
+  return names.map(l => {
+    const q = lines[l] || 0, pct = Math.round(q / max * 100);
+    return `<div class="tr"><div>${label(l)}</div><div class="n">${fmt(q)}</div>
+      <div class="pb"><div class="pct">${pct}%</div><div class="track"><i style="width:${pct}%"></i></div></div></div>`;
+  }).join('');
 }
 
 function render(d) {
   const p = d.pending;
-  $('kA').textContent = p ? fmt(p.a) : '–';
-  $('kB').textContent = p ? fmt(p.b) : '–';
-  $('kItems').textContent = p ? fmt(p.items) : '–';
-  $('kDone').textContent = fmt(d.today.done);
-  $('kQty').textContent = d.today.qty ? fmt(d.today.qty) + ' sản phẩm' : '';
-  $('kDoing').textContent = fmt(d.today.doing);
+  $('sTotal').textContent = p ? fmt(p.a + p.b) : '–';
+  $('sItems').textContent = p ? fmt(p.items) : '–';
+  $('sDone').textContent = fmt(d.today.done);
+  $('sDoing').textContent = fmt(d.today.doing);
+  $('sA').textContent = p ? fmt(p.a) : '–';
+  $('sB').textContent = p ? fmt(p.b) : '–';
 
-  // biểu đồ cột theo line
   const lines = p ? p.lines : {};
-  const max = Math.max(1, ...LINES.map(l => lines[l] || 0));
-  $('bars').innerHTML = LINES.map(l => {
-    const v = lines[l] || 0, h = Math.round((v / max) * 100);
-    return `<div class="bar ${l[0] === 'A' ? 'zA' : 'zB'}"><div class="v">${v ? fmt(v) : ''}</div>
-      <div class="col" style="height:${v ? Math.max(h, 2) : 0}%"></div><div class="l">${l}</div></div>`;
-  }).join('');
-
-  // mã còn nhiều hàng chờ nhất
-  const top = p ? p.top.slice(0, 6) : [];
-  const tmax = Math.max(1, ...top.map(t => t.total));
-  $('topList').innerHTML = !p ? '<div class="empty" style="color:var(--muted)">Chưa có dữ liệu</div>'
-    : !top.length ? '<div class="empty">Không còn hàng chờ</div>'
-    : top.map(t => `<div class="row"><div class="n">${esc(t.name)}</div><div class="t">${fmt(t.total)}</div>
-        <div class="meter"><i style="width:${Math.round(t.total / tmax * 100)}%"></i></div></div>`).join('');
+  const max = Math.max(1, ...[...LINES_A, ...LINES_B].map(l => lines[l] || 0)); // tỉ lệ so với line nhiều nhất
+  $('rowsB').innerHTML = rowsHtml(LINES_B, lines, max);
+  $('rowsA').innerHTML = rowsHtml(LINES_A, lines, max);
 }
 
 async function load() {
@@ -69,6 +59,5 @@ async function load() {
   }
 }
 
-tickClock(); setInterval(tickClock, 1000);
 load(); setInterval(load, REFRESH_MS);
 setTimeout(() => location.reload(), RELOAD_MS);

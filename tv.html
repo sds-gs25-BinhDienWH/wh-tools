@@ -3,45 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#081324">
 <meta name="robots" content="noindex">
-<title>SDS-GS25 Binh Dien Warehouse · Bảng theo dõi</title>
+<title>SAMSUNG SDS · WH Main Status Board</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
 <link rel="stylesheet" href="tv.css">
 </head>
 <body>
-<div class="tv">
-  <header>
-    <div class="brand">
-      <img src="logo.svg?v=4" alt="">
-      <div>
-        <div class="b1">SDS-GS25</div>
-        <div class="b2">Binh Dien Warehouse <span class="badge">TOOL</span></div>
-      </div>
-    </div>
-    <div class="clock"><div id="clockTime">--:--</div><div id="clockDate"></div></div>
-  </header>
+<div class="board">
+  <div class="head">
+    <div class="logo">SAMSUNG SDS</div>
+    <div class="title">WH MAIN STATUS BOARD</div>
+  </div>
 
-  <section class="kpis">
-    <div class="kpi zA"><div class="k-label">Hàng chờ khu A</div><div class="k-num" id="kA">–</div></div>
-    <div class="kpi zB"><div class="k-label">Hàng chờ khu B</div><div class="k-num" id="kB">–</div></div>
-    <div class="kpi"><div class="k-label">Mã còn chờ</div><div class="k-num" id="kItems">–</div></div>
-    <div class="kpi ok"><div class="k-label">Đã điều hôm nay</div><div class="k-num" id="kDone">–</div><div class="k-sub" id="kQty"></div></div>
-    <div class="kpi"><div class="k-label">Đang làm</div><div class="k-num" id="kDoing">–</div><div class="k-sub">mã</div></div>
-  </section>
+  <div class="sum">
+    <div class="s"><span class="l">TỔNG HÀNG CHỜ:</span><span class="v red" id="sTotal">–</span></div>
+    <div class="s"><span class="l">MÃ CÒN CHỜ:</span><span class="v" id="sItems">–</span></div>
+    <div class="s"><span class="l">ĐÃ ĐIỀU HÔM NAY:</span><span class="v" id="sDone">–</span></div>
+    <div class="s"><span class="l">ĐANG LÀM:</span><span class="v" id="sDoing">–</span></div>
+  </div>
 
-  <section class="main">
-    <div class="panel chart">
-      <h2>Hàng chờ theo line</h2>
-      <div class="bars" id="bars"></div>
+  <div class="ab">
+    <div class="side">
+      <div class="side-h"><span class="z">B:</span><span class="zv" id="sB">–</span></div>
+      <div class="tr th"><div>LINE</div><div class="n">QTY</div><div>TỈ LỆ %</div></div>
+      <div class="rows" id="rowsB"></div>
     </div>
-    <div class="panel top">
-      <h2>Mã còn nhiều hàng chờ nhất</h2>
-      <div id="topList"></div>
+    <div class="side">
+      <div class="side-h"><span class="z">A:</span><span class="zv" id="sA">–</span></div>
+      <div class="tr th"><div>LINE</div><div class="n">QTY</div><div>TỈ LỆ %</div></div>
+      <div class="rows" id="rowsA"></div>
     </div>
-  </section>
+  </div>
 
-  <footer><span class="dot" id="dot"></span><span id="status">Đang tải…</span></footer>
+  <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">Tỉ lệ = so với line còn nhiều hàng chờ nhất · SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
 </div>
 <script src="tv.js"></script>
 </body>
