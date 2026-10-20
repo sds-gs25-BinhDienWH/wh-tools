@@ -14,6 +14,7 @@ const UPSTREAM = 'http://119.15.179.186:8081/api';
 const EMP_SHEET = 'Trang tính1'; // tên tab danh sách nhân viên (không tìm thấy thì dùng tab đầu tiên)
 const EMP_ID_COL = 3;            // cột chứa Employee ID   (A=1, B=2, C=3)
 const EMP_NAME_COL = 2;          // cột chứa họ tên        (cột B: Full Name)
+const EMP_SHORT_COL = 5;         // cột chứa TÊN NGẮN (2 âm tiết) để hiện trên dashboard (cột E: Tên). Trống thì dùng họ tên đầy đủ
 const LOG_SHEET = 'Log';         // tab nhật ký chung: đăng nhập, đăng xuất, quét sai... (tự tạo)
 const JOB_SHEET = 'Điều hàng';   // tab điều hàng: MỖI MÃ HÀNG MỘT DÒNG, có giờ bắt đầu và kết thúc (tự tạo)
 
@@ -46,13 +47,14 @@ function testSetup() {
   jobSheet_();                                   // tạo tab "Điều hàng" nếu chưa có
   planSheet_();                                  // tạo tab "Plan" (2 ô vàng để nhập Plan) nếu chưa có
   appendLog_([new Date(), 'TEST', 'Chạy thử testSetup', 'THỬ GHI LOG', '', '', 'OK', '', '', 'Dòng thử, xoá được']); // tạo tab "Log" + 1 dòng thử
+  console.log('Tên ngắn (cột E) đọc được cho ' + Object.keys(shortNames_()).length + ' nhân viên.');
   console.log('OK: đọc được ' + n + ' nhân viên. Nhật ký được ghi vào FILE: "' + book.getName() + '"\n' + book.getUrl() +
     '\nCác tab: "' + LOG_SHEET + '" (đăng nhập, quét sai...), "' + JOB_SHEET + '" (mỗi mã hàng một dòng) và "' + PLAN_SHEET + '" (nhập Plan ở ô vàng B3, B4).');
   return n;
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-21d · dashboard COLD WH Daily Progress: Plan/Actual (PCS) + hàng chờ còn lại + năng suất tất cả nhân viên';
+const VERSION = '2026-10-21f · dashboard COLD WH Daily Progress: hiện tên ngắn (cột E)';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -173,8 +175,8 @@ function dashboard_(key) {
   const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
   if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('dash5');
-  if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 20 giây
+  const hit = cache.get('dash7');
+  if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 8 giây
 
   const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
   const res = { at: Date.now(), date: fmt(new Date(), 'dd/MM/yyyy'), plan: { qty: 0, items: 0 }, actual: { qty: 0, items: 0 }, top: [],
@@ -194,25 +196,34 @@ function dashboard_(key) {
       const n = Math.min(sh.getLastRow() - 1, 5000), first = sh.getLastRow() - n + 1;
       const vals = sh.getRange(first, 1, n, 11).getValues();             // cột A..K
       const today = fmt(new Date(), 'yyyyMMdd');
+      let short = {};
+      try { short = shortNames_(); } catch (e) { console.error('Dashboard: lỗi đọc tên ngắn: ' + e); }
       const people = {};
       vals.forEach(function (v) {
         if (!(v[0] instanceof Date) || fmt(v[0], 'yyyyMMdd') !== today) return;
         if (String(v[7]) !== 'XONG ĐỦ') return;
         const q = Number(v[10]) || 0, id = String(v[3]);
         res.actual.qty += q; res.actual.items++;
-        const p = people[id] || (people[id] = { name: String(v[4]), qty: 0, items: 0 });
+        // Hiện TÊN NGẮN (cột E); nhân viên chưa có tên ngắn thì dùng họ tên đầy đủ
+        const p = people[id] || (people[id] = { id: id, name: short[normId_(id)] || String(v[4]), qty: 0, items: 0 });
         p.qty += q; p.items++;
       });
       // Tất cả nhân viên đã hoàn thành mã hôm nay, xếp theo số lượng giảm dần (tối đa 30 người)
-      res.top = Object.keys(people).map(function (id) { return people[id]; })
+      const list = Object.keys(people).map(function (id) { return people[id]; })
         .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 30);
+      // Tên ngắn trùng nhau (vd 2 bạn cùng tên "Cam Nhung") thì thêm 3 số cuối mã nhân viên cho khỏi nhầm
+      const seen = {};
+      list.forEach(function (p) { seen[p.name] = (seen[p.name] || 0) + 1; });
+      res.top = list.map(function (p) {
+        return { name: seen[p.name] > 1 ? p.name + ' ·' + String(p.id).slice(-3) : p.name, qty: p.qty, items: p.items };
+      });
       res.stats = { joined: Object.keys(people).length, workers: Object.keys(people).length, items: res.actual.items };
     }
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
 
   // Hàng chờ còn lại: tổng khu A + khu B đang chờ điều, lấy từ server kho (cache 15 giây trong fetchUpstream_)
   try {
-    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 15);
+    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 8);
     if (r.ok) {
       const j = JSON.parse(r.text);
       const rows = Array.isArray(j.data) ? j.data : [];            // hết hàng chờ: data = null
@@ -227,7 +238,7 @@ function dashboard_(key) {
     }
   } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
 
-  cache.put('dash5', JSON.stringify(res), 20);
+  cache.put('dash7', JSON.stringify(res), 8);
   return res;
 }
 // ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------
@@ -335,6 +346,26 @@ function empMap_(force) {
   });
   const text = JSON.stringify(map);
   if (text.length < 90000) cache.put('emp_map', text, 300);
+  return map;
+}
+
+// Tên ngắn (cột E) theo mã nhân viên, dùng cho dashboard. Cache 5 phút như danh sách nhân viên.
+function shortNames_() {
+  const cache = CacheService.getScriptCache();
+  const c = cache.get('emp_short');
+  if (c) return JSON.parse(c);
+  const book = ss_();
+  const sh = book.getSheetByName(EMP_SHEET) || book.getSheets()[0];
+  const map = {};
+  if (sh) {
+    sh.getDataRange().getValues().forEach(function (row) {
+      const id = normId_(row[EMP_ID_COL - 1]);
+      const sn = String(row[EMP_SHORT_COL - 1] == null ? '' : row[EMP_SHORT_COL - 1]).replace(/\s+/g, ' ').trim();
+      if (id && sn) map[id] = sn;
+    });
+  }
+  const text = JSON.stringify(map);
+  if (text.length < 90000) cache.put('emp_short', text, 300);
   return map;
 }
 

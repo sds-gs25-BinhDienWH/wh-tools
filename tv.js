@@ -5,7 +5,7 @@
 
 // Phải giống PROXY_URL trong app.js (đổi proxy thì sửa cả hai chỗ)
 const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyV5otbjq-5N00CMUl-7mbyC36Ztqf87C8IIzaIOiRjqwV_HGsKF7akzkFIjBcBO-VZNQ/exec';
-const REFRESH_MS = 30000;          // tải lại số liệu mỗi 30 giây
+const REFRESH_MS = 15000;          // tải lại số liệu mỗi 15 giây (proxy giữ kết quả 8 giây, nên số trễ tối đa khoảng 25 giây)
 const RELOAD_MS = 6 * 3600 * 1000; // tải lại cả trang mỗi 6 giờ để TV để cả tuần vẫn lấy bản mới
 const MAX_PEOPLE = 24;             // số nhân viên tối đa hiện trên màn hình (2 cột x 12 dòng); nhiều hơn thì ghi "và N người khác"
 
@@ -15,6 +15,21 @@ const KEY = new URLSearchParams(location.hash.replace(/^#/, '')).get('key') || p
 const BASE = params.get('api') || PROXY_URL;   // ?api=... chỉ để thử
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const fmt = n => Number(n || 0).toLocaleString('vi-VN');
+
+// Số nào vừa đổi so với lần tải trước thì nháy sáng vàng ~1,5 giây để nhìn là biết nó vừa cập nhật
+const prev = {};
+function flash(el) {
+  if (!el) return;
+  el.classList.remove('flash'); void el.offsetWidth; // khởi động lại hiệu ứng nếu đang chạy
+  el.classList.add('flash');
+}
+function setNum(id, text) {
+  const el = $(id);
+  const changed = prev[id] !== undefined && prev[id] !== text;
+  el.textContent = text;
+  prev[id] = text;
+  if (changed) flash(el);
+}
 
 // Vòng tiến độ Actual/Plan (SVG), chỉ tính số lượng PCS. Chưa có plan thì chỉ hiện Actual và nhắc nhập Plan.
 function renderRing(actual, plan) {
@@ -32,6 +47,8 @@ function renderRing(actual, plan) {
       <div class="r-row"><span class="l">PLAN</span><span class="v">${has ? fmt(plan) : '–'}</span></div>
       ${has ? `<div class="r-row left"><span class="l">CÒN LẠI</span><span class="v">${fmt(Math.max(plan - actual, 0))}</span></div>`
             : '<div class="r-note">Nhập Plan ở tab "Plan" trong Google Sheet</div>'}</div>`;
+  if (prev.actual !== undefined && prev.actual !== actual) flash($('ring').querySelector('.r-row.act .v'));
+  prev.actual = actual;
 }
 
 function render(d) {
@@ -40,11 +57,11 @@ function render(d) {
 
   const s = d.stats || {};
   const pd = d.pending;
-  $('stPending').textContent = pd ? fmt(pd.total) : '–';
+  setNum('stPending', pd ? fmt(pd.total) : '–');
   $('stPendingSub').textContent = pd ? 'PCS · khu A ' + fmt(pd.a) + ' · khu B ' + fmt(pd.b) : 'PCS';
-  $('stJoined').textContent = fmt(s.joined);
-  $('stItems').textContent = fmt(s.items);
-  $('stAvg').textContent = s.workers ? fmt(Math.round(d.actual.qty / s.workers)) : '–';
+  setNum('stJoined', fmt(s.joined));
+  setNum('stItems', fmt(s.items));
+  setNum('stAvg', s.workers ? fmt(Math.round(d.actual.qty / s.workers)) : '–');
 
   // Tất cả nhân viên, chia ĐÔI thành 2 cột (nửa đầu bên trái, nửa sau bên phải), mỗi người 2 thanh con.
   // Mỗi loại thanh tính theo thang riêng (người cao nhất của loại đó = thanh dài nhất). Hiện tối đa MAX_PEOPLE người.
@@ -67,7 +84,11 @@ function render(d) {
       </div></div>`).join('')
     : '<div class="empty">Chưa có mã nào hoàn thành hôm nay</div>';
 }
+
+let loading = false;
 async function load() {
+  if (loading) return;                 // lần trước chưa xong (Google chậm) thì không chồng thêm yêu cầu
+  loading = true;
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 20000);
@@ -84,16 +105,20 @@ async function load() {
     // Lỗi thì giữ nguyên số liệu cũ trên TV, chỉ đổi dòng trạng thái ở chân trang
     $('dot').classList.add('err');
     $('status').textContent = 'Mất kết nối, đang thử lại… (' + (e.message || e) + ')';
+  } finally {
+    loading = false;
   }
 }
 
 // Đồng hồ góc phải trên chạy từng giây (giờ của máy đang mở TV)
 function tickClock() {
   const d = new Date();
-  $('clockTime').textContent = d.toLocaleTimeString('vi-VN', { hour12: false });
+  $('clockTime').textContent = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }); // chỉ giờ:phút
   if ($('date').textContent.indexOf('-') >= 0) $('date').textContent = d.toLocaleDateString('vi-VN'); // trước khi có ngày từ server
 }
-tickClock(); setInterval(tickClock, 1000);
+tickClock(); setInterval(tickClock, 10000);
 
 load(); setInterval(load, REFRESH_MS);
+// Tab ở nền bị Chrome làm chậm bộ đếm: quay lại tab là tải số mới NGAY, không đợi tới chu kỳ kế tiếp
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 setTimeout(() => location.reload(), RELOAD_MS);

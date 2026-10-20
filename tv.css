@@ -63,7 +63,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 .bl.q i{background:var(--qty)} .bl.m i{background:var(--items)}
 .bl b{flex:0 0 calc(var(--u)*5);font-size:var(--fs);line-height:1;font-variant-numeric:tabular-nums}
 .bl.q b{color:var(--qty)} .bl.m b{color:#B45309}
-#topNote{color:var(--muted);font-weight:700}.empty{grid-column:1/-1;grid-row:1/-1;margin:auto;color:var(--muted);font-size:calc(var(--u)*1.8);font-weight:700}
+#topNote{color:var(--muted);font-weight:700}
+
+/* số vừa đổi: nháy sáng vàng rồi tắt dần */
+@keyframes flash{0%{background:#FDE047}100%{background:transparent}}
+.flash{animation:flash 1.6s ease-out;border-radius:calc(var(--u)*.3)}
+.sv{align-self:flex-start}   /* nền nháy chỉ bao đúng con số, không tràn hết chiều ngang ô */.empty{grid-column:1/-1;grid-row:1/-1;margin:auto;color:var(--muted);font-size:calc(var(--u)*1.8);font-weight:700}
 
 .foot{flex:none;display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.35) calc(var(--u)*1.5);border-top:1px solid var(--line);
   font-size:calc(var(--u)*.95);color:var(--muted)}
