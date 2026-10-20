@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SAMSUNG SDS · WH Productivity Board</title>
+<link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
+<link rel="stylesheet" href="productivity.css">
+</head>
+<body>
+<div class="board">
+  <div class="head">
+    <div class="logo">SAMSUNG SDS</div>
+    <div class="title">WH PRODUCTIVITY BOARD</div>
+  </div>
+
+  <div class="sum">
+    <div class="s"><span class="l">TỔNG MÃ:</span><span class="v red" id="sJobs">–</span></div>
+    <div class="s"><span class="l">TỔNG SL:</span><span class="v" id="sQty">–</span></div>
+    <div class="s"><span class="l">TG TB / MÃ:</span><span class="v" id="sAvg">–</span></div>
+    <div class="s"><span class="l">ĐANG LÀM:</span><span class="v" id="sDoing">–</span></div>
+    <div class="s"><span class="l">HUỶ / BỎ DỞ:</span><span class="v" id="sCancel">–</span></div>
+  </div>
+
+  <div class="cols">
+    <div class="tbl">
+      <div class="tr th"><div class="c-no">#</div><div class="c-name">NHÂN VIÊN</div><div class="c-n">SỐ MÃ</div><div class="c-n">SL</div><div class="c-n">TG TB</div><div class="c-bar">PROGRESS %</div></div>
+      <div id="rows"></div>
+    </div>
+    <div class="hr">
+      <div class="hr-t">SỐ MÃ HOÀN THÀNH THEO GIỜ</div>
+      <div class="hbars" id="hbars"></div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
+</div>
+<script src="productivity.js"></script>
+</body>
+</html>

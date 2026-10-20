@@ -1,0 +1,54 @@
+/* Bảng năng suất: nền trắng, thanh xanh có chữ SAMSUNG SDS, bảng từng dòng + thanh tiến độ xanh lá (kiểu DAS Main Status Board). */
+:root{
+  --blue:#1428A0; --bar:#1F5FD8; --ink:#111827; --muted:#4B5563; --line:#D1D5DB; --track:#E5E7EB; --red:#C8102E; --green:#15803D;
+  --u:calc(100vw / 100);   /* 1u = 1% chiều rộng: cỡ chữ/khoảng cách tính theo u nên TV nào cũng vừa */
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);font-family:"Segoe UI",Arial,Helvetica,sans-serif}
+.board{height:100%;display:flex;flex-direction:column}
+
+.head{display:flex;height:calc(var(--u)*6.2);border-bottom:2px solid #0b1f6b}
+.logo{flex:0 0 calc(var(--u)*30);display:flex;align-items:center;padding-left:calc(var(--u)*2);color:var(--blue);
+  font-size:calc(var(--u)*3.6);font-weight:900;font-style:italic;letter-spacing:.01em}
+.title{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bar);color:#fff;
+  font-size:calc(var(--u)*3.4);font-weight:800;letter-spacing:.02em}
+
+.sum{display:flex;justify-content:space-around;align-items:baseline;padding:calc(var(--u)*1.2) calc(var(--u)*2);border-bottom:1px solid var(--line)}
+.s{display:flex;align-items:baseline;gap:calc(var(--u)*.8)}
+.s .l{color:var(--blue);font-size:calc(var(--u)*1.7);font-weight:800}
+.s .v{font-size:calc(var(--u)*3.6);font-weight:800;font-variant-numeric:tabular-nums}
+.s .v.red{color:var(--red)}
+
+.cols{flex:1;min-height:0;display:grid;grid-template-columns:1.9fr 1fr}
+.tbl{padding:calc(var(--u)*.8) calc(var(--u)*1.5) 0;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tr{display:grid;grid-template-columns:4% 1fr 11% 12% 11% 28%;align-items:center;gap:calc(var(--u)*.6);
+  padding:calc(var(--u)*.5) 0;border-bottom:1px solid var(--line)}
+.tr.th{border-bottom:2px solid var(--line);color:var(--blue);font-weight:800;font-size:calc(var(--u)*1.35)}
+#rows{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+#rows .tr{flex:1 1 0;max-height:calc(var(--u)*5.2);font-size:calc(var(--u)*1.9);font-weight:700}
+.c-no{color:var(--muted);text-align:right}
+.c-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-n{text-align:right;font-variant-numeric:tabular-nums}
+.th .c-n{text-align:right}
+.c-bar{display:flex;align-items:center;gap:calc(var(--u)*.7)}
+.th .c-bar{justify-content:flex-start}
+.pct{flex:0 0 calc(var(--u)*4.6);text-align:right;font-size:calc(var(--u)*1.6);font-variant-numeric:tabular-nums;white-space:nowrap}
+.track{flex:1;height:calc(var(--u)*2.1);background:var(--track);border:1px solid #cfd4dc}
+.track i{display:block;height:100%;background:linear-gradient(180deg,#22a24b,#0f7a33 55%,#22a24b)}
+.doing{display:inline-block;width:calc(var(--u)*.8);height:calc(var(--u)*.8);border-radius:50%;background:#16a34a;margin-left:calc(var(--u)*.6)}
+.empty{margin:auto;color:var(--muted);font-size:calc(var(--u)*2.2);font-weight:700}
+
+.hr{padding:calc(var(--u)*.8) calc(var(--u)*1.5) 0;display:flex;flex-direction:column;min-height:0}
+.hr-t{color:var(--blue);font-weight:800;font-size:calc(var(--u)*1.35);padding-bottom:calc(var(--u)*.5);border-bottom:2px solid var(--line)}
+.hbars{flex:1;min-height:0;display:flex;align-items:flex-end;gap:calc(var(--u)*.45);padding:calc(var(--u)*2.2) 0 calc(var(--u)*.6)}
+.hb{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.hb .n{font-size:calc(var(--u)*1.5);font-weight:800;margin-bottom:calc(var(--u)*.2);font-variant-numeric:tabular-nums}
+.hb .b{width:100%;background:var(--bar);min-height:calc(var(--u)*.2);transition:height .6s ease}
+.hb.now .b{background:var(--green)}
+.hb .h{font-size:calc(var(--u)*1.25);color:var(--muted);font-weight:700;margin-top:calc(var(--u)*.3)}
+
+.foot{display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.5) calc(var(--u)*1.5);border-top:1px solid var(--line);
+  font-size:calc(var(--u)*1.1);color:var(--muted)}
+.foot .r{margin-left:auto;font-style:italic}
+.dot{width:calc(var(--u)*.8);height:calc(var(--u)*.8);border-radius:50%;background:#16a34a}
+.dot.err{background:#dc2626}

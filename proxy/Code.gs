@@ -51,7 +51,7 @@ function testSetup() {
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-20c · điều hàng: mỗi mã một dòng, mã phiên = Họ_tên_Mã_hàng_giờ bắt đầu';
+const VERSION = '2026-10-20d · điều hàng mỗi mã một dòng · dashboard TV · bảng năng suất';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -63,6 +63,7 @@ function doPost(e) {
     if (req.action === 'suggest') return out(suggestEmp_(req.q));
     if (req.action === 'complete') return out(complete_(req));
     if (req.action === 'dashboard') return out(dashboard_(req.key));
+    if (req.action === 'productivity') return out(productivity_(req.key));
 
     const method = String(req.method || 'GET').toUpperCase();
     const path = String(req.path || '');
@@ -202,6 +203,54 @@ function dashboard_(key) {
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
 
   cache.put('dash', JSON.stringify(res), 20);
+  return res;
+}
+
+// ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------
+// Trang productivity.html gọi action "productivity". Chỉ nên mở ở màn hình công nhân không nhìn thấy.
+function productivity_(key) {
+  const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
+  if (!need) return { __error: 'Cần đặt DASH_KEY trong Script properties để xem bảng năng suất (bảng này có tên và thời gian từng người)' };
+  if (String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('prod');
+  if (hit) return JSON.parse(hit);
+
+  const res = { at: Date.now(), total: { jobs: 0, qty: 0, avgSec: 0, doing: 0, cancel: 0 }, people: [], hourly: [] };
+  const sh = logSs_().getSheetByName(JOB_SHEET);
+  if (sh && sh.getLastRow() > 1) {
+    const n = Math.min(sh.getLastRow() - 1, 5000), first = sh.getLastRow() - n + 1;
+    const vals = sh.getRange(first, 1, n, 11).getValues();              // cột A..K
+    const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
+    const today = fmt(new Date(), 'yyyyMMdd'), recent = Date.now() - 70 * 60000;
+    const people = {}, hourly = {};
+    let secSum = 0, secN = 0;
+    vals.forEach(function (v) {
+      const start = v[0];
+      if (!(start instanceof Date) || fmt(start, 'yyyyMMdd') !== today) return;
+      const id = String(v[3]), status = String(v[7]);
+      const p = people[id] || (people[id] = { name: String(v[4]), jobs: 0, qty: 0, secSum: 0, secN: 0, cancel: 0, doing: 0 });
+      if (status === 'XONG ĐỦ') {
+        p.jobs++; p.qty += Number(v[10]) || 0;
+        const sec = Number(v[2]);
+        if (isFinite(sec) && v[2] !== '') { p.secSum += sec; p.secN++; secSum += sec; secN++; }
+        res.total.jobs++; res.total.qty += Number(v[10]) || 0;
+        if (v[1] instanceof Date) { const h = Number(fmt(v[1], 'H')); hourly[h] = (hourly[h] || 0) + 1; }
+      } else if (status === JOB_OPEN) {
+        if (start.getTime() > recent) { p.doing++; res.total.doing++; }
+      } else if (status === 'ĐÃ HUỶ' || status === 'QUÁ 1 GIỜ' || status === 'BỎ DỞ (KHÔNG BÁO)') {
+        p.cancel++; res.total.cancel++;
+      }
+    });
+    res.total.avgSec = secN ? Math.round(secSum / secN) : 0;
+    res.people = Object.keys(people).map(function (id) {
+      const p = people[id];
+      return { name: p.name, jobs: p.jobs, qty: p.qty, avgSec: p.secN ? Math.round(p.secSum / p.secN) : 0, cancel: p.cancel, doing: p.doing };
+    }).filter(function (p) { return p.jobs > 0 || p.doing > 0; })
+      .sort(function (a, b) { return b.jobs - a.jobs || b.qty - a.qty; }).slice(0, 30);
+    res.hourly = Object.keys(hourly).map(function (h) { return { h: Number(h), n: hourly[h] }; });
+  }
+  cache.put('prod', JSON.stringify(res), 30);
   return res;
 }
 
