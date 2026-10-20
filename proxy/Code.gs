@@ -44,14 +44,15 @@ function testSetup() {
   const n = Object.keys(empMap_(true)).length;
   const book = logSs_();
   jobSheet_();                                   // tạo tab "Điều hàng" nếu chưa có
+  planSheet_();                                  // tạo tab "Plan" (2 ô vàng để nhập Plan) nếu chưa có
   appendLog_([new Date(), 'TEST', 'Chạy thử testSetup', 'THỬ GHI LOG', '', '', 'OK', '', '', 'Dòng thử, xoá được']); // tạo tab "Log" + 1 dòng thử
   console.log('OK: đọc được ' + n + ' nhân viên. Nhật ký được ghi vào FILE: "' + book.getName() + '"\n' + book.getUrl() +
-    '\nCác tab: "' + LOG_SHEET + '" (đăng nhập, quét sai...) và "' + JOB_SHEET + '" (mỗi mã hàng một dòng).');
+    '\nCác tab: "' + LOG_SHEET + '" (đăng nhập, quét sai...), "' + JOB_SHEET + '" (mỗi mã hàng một dòng) và "' + PLAN_SHEET + '" (nhập Plan ở ô vàng B3, B4).');
   return n;
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-20d · điều hàng mỗi mã một dòng · dashboard TV · bảng năng suất';
+const VERSION = '2026-10-21 · dashboard SAMSUNG SDS: Plan/Actual + Top 5 năng suất';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
 function doPost(e) {
@@ -148,64 +149,67 @@ function complete_(req) {
   return { ok: true };
 }
 
-// ---------- Dashboard TV: chỉ số liệu CHUNG của cả kho (không tên người, không thời gian làm việc) ----------
+// ---------- Dashboard SAMSUNG SDS: Plan so với Actual hôm nay + Top 5 năng suất ----------
 // Trang tv.html gọi action "dashboard". Nếu có Script property DASH_KEY thì phải gửi đúng khoá mới xem được.
-const LINE_NAMES = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];
+// Plan: nhập tay ở tab PLAN_SHEET (ô vàng B3 = Plan số lượng, B4 = Plan số mã). Actual: đếm từ tab "Điều hàng" (mã XONG ĐỦ hôm nay).
+const PLAN_SHEET = 'Plan';
+
+function planSheet_() {
+  const book = logSs_();
+  let sh = book.getSheetByName(PLAN_SHEET);
+  if (!sh) {
+    sh = book.insertSheet(PLAN_SHEET);
+    sh.getRange('A1').setValue('SAMSUNG SDS · PLAN HÔM NAY').setFontWeight('bold').setFontSize(14);
+    sh.getRange('A3:A4').setValues([['Plan số lượng (SL)'], ['Plan số mã (itemcode)']]).setFontWeight('bold');
+    sh.getRange('B3:B4').setBackground('#FFF2CC').setNumberFormat('#,##0').setFontWeight('bold').setFontSize(14)
+      .setHorizontalAlignment('center').setBorder(true, true, true, true, true, true);
+    sh.getRange('A6').setValue('Nhập số vào ô VÀNG (B3, B4). Dashboard tự lấy làm Plan. Để trống = không hiện % tiến độ phần đó.').setFontStyle('italic');
+    sh.setColumnWidth(1, 240); sh.setColumnWidth(2, 150);
+  }
+  return sh;
+}
 
 function dashboard_(key) {
   const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
   if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('dash');
+  const hit = cache.get('dash2');
   if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 20 giây
 
-  const res = { at: Date.now(), pending: null, today: { done: 0, doing: 0, qty: 0 } };
+  const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
+  const res = { at: Date.now(), date: fmt(new Date(), 'dd/MM/yyyy'), plan: { qty: 0, items: 0 }, actual: { qty: 0, items: 0 }, top: [] };
 
-  // Hàng chờ còn lại: lấy từ server kho (cache 15 giây trong fetchUpstream_)
+  // Plan: hai ô vàng trong tab "Plan"
   try {
-    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 15);
-    if (r.ok) {
-      const j = JSON.parse(r.text);
-      const rows = Array.isArray(j.data) ? j.data : [];   // hết hàng chờ: data = null
-      const lines = {};
-      LINE_NAMES.forEach(function (l) { lines[l] = 0; });
-      let a = 0, b = 0, items = 0;
-      const top = [];
-      rows.forEach(function (it) {
-        let tot = 0;
-        LINE_NAMES.forEach(function (l) {
-          const q = Number(it[l]) || 0;
-          lines[l] += q; tot += q;
-          if (l.charAt(0) === 'A') a += q; else b += q;
-        });
-        if (tot > 0) { items++; top.push({ name: String(it.ItemName || ''), code: String(it.ItemCode || ''), total: tot }); }
-      });
-      top.sort(function (x, y) { return y.total - x.total; });
-      res.pending = { items: items, a: a, b: b, lines: lines, top: top.slice(0, 8) };
-    }
-  } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
+    const pl = planSheet_();
+    res.plan.qty = Number(pl.getRange('B3').getValue()) || 0;
+    res.plan.items = Number(pl.getRange('B4').getValue()) || 0;
+  } catch (e) { console.error('Dashboard: lỗi đọc Plan: ' + e); }
 
-  // Tiến độ hôm nay: đếm từ tab "Điều hàng" (chỉ đếm số, không lấy tên người hay thời lượng)
+  // Actual + Top 5: đếm từ tab "Điều hàng" (chỉ mã XONG ĐỦ có giờ bắt đầu là hôm nay)
   try {
     const sh = logSs_().getSheetByName(JOB_SHEET);
     if (sh && sh.getLastRow() > 1) {
-      const n = Math.min(sh.getLastRow() - 1, 3000), first = sh.getLastRow() - n + 1;
-      const vals = sh.getRange(first, 1, n, 11).getValues();            // cột A..K
-      const day = function (d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); };
-      const today = day(new Date()), recent = Date.now() - 70 * 60000;
+      const n = Math.min(sh.getLastRow() - 1, 5000), first = sh.getLastRow() - n + 1;
+      const vals = sh.getRange(first, 1, n, 11).getValues();             // cột A..K
+      const today = fmt(new Date(), 'yyyyMMdd');
+      const people = {};
       vals.forEach(function (v) {
-        if (!(v[0] instanceof Date)) return;
-        const status = String(v[7]);
-        if (status === 'XONG ĐỦ' && day(v[0]) === today) { res.today.done++; res.today.qty += Number(v[10]) || 0; }
-        else if (status === JOB_OPEN && v[0].getTime() > recent) res.today.doing++;
+        if (!(v[0] instanceof Date) || fmt(v[0], 'yyyyMMdd') !== today) return;
+        if (String(v[7]) !== 'XONG ĐỦ') return;
+        const q = Number(v[10]) || 0, id = String(v[3]);
+        res.actual.qty += q; res.actual.items++;
+        const p = people[id] || (people[id] = { name: String(v[4]), qty: 0, items: 0 });
+        p.qty += q; p.items++;
       });
+      res.top = Object.keys(people).map(function (id) { return people[id]; })
+        .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 5);
     }
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
 
-  cache.put('dash', JSON.stringify(res), 20);
+  cache.put('dash2', JSON.stringify(res), 20);
   return res;
 }
-
 // ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------
 // Trang productivity.html gọi action "productivity". Chỉ nên mở ở màn hình công nhân không nhìn thấy.
 function productivity_(key) {

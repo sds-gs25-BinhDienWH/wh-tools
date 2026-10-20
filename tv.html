@@ -4,39 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>SAMSUNG SDS · WH Main Status Board</title>
+<title>SAMSUNG SDS · WH Dashboard</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
-<link rel="stylesheet" href="tv.css">
+<link rel="stylesheet" href="tv.css?v=4">
 </head>
 <body>
 <div class="board">
   <div class="head">
     <div class="logo">SAMSUNG SDS</div>
-    <div class="title">WH MAIN STATUS BOARD</div>
+    <div class="title">WH DAILY PROGRESS</div>
   </div>
 
-  <div class="sum">
-    <div class="s"><span class="l">TỔNG HÀNG CHỜ:</span><span class="v red" id="sTotal">–</span></div>
-    <div class="s"><span class="l">MÃ CÒN CHỜ:</span><span class="v" id="sItems">–</span></div>
-    <div class="s"><span class="l">ĐÃ ĐIỀU HÔM NAY:</span><span class="v" id="sDone">–</span></div>
-    <div class="s"><span class="l">ĐANG LÀM:</span><span class="v" id="sDoing">–</span></div>
+  <div class="sec-t">TIẾN ĐỘ HÔM NAY · <span id="date">--/--/----</span> &nbsp;·&nbsp; ACTUAL / PLAN</div>
+  <div class="prog">
+    <div class="ring" id="ringQty"></div>
+    <div class="ring" id="ringItems"></div>
   </div>
 
-  <div class="ab">
-    <div class="side">
-      <div class="side-h"><span class="z">B:</span><span class="zv" id="sB">–</span></div>
-      <div class="tr th"><div>LINE</div><div class="n">QTY</div><div>TỈ LỆ %</div></div>
-      <div class="rows" id="rowsB"></div>
-    </div>
-    <div class="side">
-      <div class="side-h"><span class="z">A:</span><span class="zv" id="sA">–</span></div>
-      <div class="tr th"><div>LINE</div><div class="n">QTY</div><div>TỈ LỆ %</div></div>
-      <div class="rows" id="rowsA"></div>
-    </div>
-  </div>
+  <div class="sec-t">NĂNG SUẤT TOP 5 <span class="lg"><i class="sw q"></i>Số lượng <i class="sw m"></i>Số itemcode</span></div>
+  <div class="top" id="top"></div>
 
-  <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">Tỉ lệ = so với line còn nhiều hàng chờ nhất · SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
+  <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
 </div>
-<script src="tv.js"></script>
+<script src="tv.js?v=4"></script>
 </body>
 </html>
