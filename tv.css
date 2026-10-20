@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 /* header nhỏ: SAMSUNG SDS + COLD WH Daily Progress */
 .head{display:flex;align-items:center;height:calc(var(--u)*3.4);border-bottom:2px solid #0b1f6b;flex:none;background:var(--bar);color:#fff}
 .logo{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 calc(var(--u)*1.6);background:#fff;color:var(--blue);
-  font-size:calc(var(--u)*1.9);font-weight:900;font-style:italic;letter-spacing:.01em}
+  font-size:calc(var(--u)*1.9);font-weight:900;letter-spacing:.02em}
 .title{padding-left:calc(var(--u)*1.6);font-size:calc(var(--u)*1.8);font-weight:800;letter-spacing:.02em}
 .date{margin-left:auto;padding-right:calc(var(--u)*1.6);font-size:calc(var(--u)*1.3);font-weight:700;opacity:.95}
 
@@ -62,6 +62,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 
 .foot{flex:none;display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.35) calc(var(--u)*1.5);border-top:1px solid var(--line);
   font-size:calc(var(--u)*.95);color:var(--muted)}
-.foot .r{margin-left:auto;font-style:italic}
+.foot .r{margin-left:auto}
 .dot{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:#16a34a}
 .dot.err{background:#dc2626}

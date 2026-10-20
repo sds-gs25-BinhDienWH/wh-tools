@@ -9,7 +9,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 
 .head{display:flex;height:calc(var(--u)*6.2);border-bottom:2px solid #0b1f6b}
 .logo{flex:0 0 calc(var(--u)*30);display:flex;align-items:center;padding-left:calc(var(--u)*2);color:var(--blue);
-  font-size:calc(var(--u)*3.6);font-weight:900;font-style:italic;letter-spacing:.01em}
+  font-size:calc(var(--u)*3.6);font-weight:900;letter-spacing:.02em}
 .title{flex:1;display:flex;align-items:center;justify-content:center;background:var(--bar);color:#fff;
   font-size:calc(var(--u)*3.4);font-weight:800;letter-spacing:.02em}
 
@@ -49,6 +49,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 
 .foot{display:flex;align-items:center;gap:calc(var(--u)*.7);padding:calc(var(--u)*.5) calc(var(--u)*1.5);border-top:1px solid var(--line);
   font-size:calc(var(--u)*1.1);color:var(--muted)}
-.foot .r{margin-left:auto;font-style:italic}
+.foot .r{margin-left:auto}
 .dot{width:calc(var(--u)*.8);height:calc(var(--u)*.8);border-radius:50%;background:#16a34a}
 .dot.err{background:#dc2626}
