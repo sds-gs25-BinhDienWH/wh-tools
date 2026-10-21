@@ -715,7 +715,9 @@ function init() {
   $('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.code); });
   $('#dlgClose').addEventListener('click', () => $('#dlg').close());
   $('#formDev').addEventListener('submit', e => { e.preventDefault(); saveDev($('#devInput').value); });
-  $('#devLabel').addEventListener('click', () => { $('#devInput').value = getDev(); $('#devSetup').hidden = false; $('#devInput').focus(); });
+  $('#devClear').addEventListener('click', () => { $('#devInput').value = ''; $('#devInput').focus(); });
+  $('#devInput').addEventListener('focus', e => e.target.select());
+  $('#devLabel').addEventListener('click', () => { $('#devInput').value = getDev(); $('#devSetup').hidden = false; $('#devInput').focus(); $('#devInput').select(); });
   $$('.seg button').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('inputMode', S.mode); applyMode(); }));
   $('#empCode').addEventListener('input', suggestEmps);
   $('#moveCode').addEventListener('input', suggestItems);
