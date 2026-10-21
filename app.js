@@ -61,8 +61,10 @@ function baseOrThrow() {
 }
 
 // Với proxy: gửi text/plain để tránh preflight CORS; proxy tự gọi server kho và ghi log nhân viên
+// Tên máy (PDA-01...): nhập một lần ở lần mở đầu tiên, lưu trên máy, gửi kèm mọi lệnh để proxy ghi vào log
+const getDev = () => { try { return localStorage.getItem('dev') || ''; } catch { return ''; } };
 const proxyFetch = (base, payload, signal) => fetch(base, { method: 'POST',
-  headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal });
+  headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, dev: getDev() }), signal });
 
 // Mọi lệnh gọi đều kèm mã nhân viên đang đăng nhập; proxy kiểm tra và ghi log theo người đó
 async function api(method, path, body, emp = S.emp && S.emp.id) {
@@ -259,11 +261,22 @@ async function doLoginEmp(raw) {
   out.innerHTML = loading;
   try {
     const r = await loginEmp(id);
+    // Máy đang có mã làm dở của người khác: không cho người khác vào, người đó phải đăng nhập và Hoàn thành trước
+    const pending = jobStore.load();
+    if (pending && pending.emp !== r.id) {
+      out.innerHTML = errBox(`Máy đang có mã chưa hoàn thành của ${pending.empName || pending.emp}. Người đó phải đăng nhập và bấm Hoàn thành trước.`);
+      $('#empCode').value = '';
+      return;
+    }
     out.innerHTML = '';
     $('#moveOut').innerHTML = '';
     setEmp({ id: r.id, name: r.name });
     toast('Xin chào ' + r.name);
-    restoreJob(); // có mã làm dở của chính người này (chưa quá 1 giờ) thì mở lại luôn
+    // Vào thẳng màn hình Điều hàng ở chế độ QUÉT, con trỏ nằm sẵn trong ô mã hàng: chỉ cần bắn PDA
+    S.mode = 'scan'; store.set('inputMode', 'scan');
+    showTab('move'); applyMode();
+    setTimeout(() => { if (S.emp && !S.work) $('#moveCode').focus(); }, 80);
+    restoreJob(); // có mã làm dở của chính người này thì mở lại luôn
     refresh(); schedule();
   } catch (e) { out.innerHTML = errBox(e); }
   $('#empCode').value = '';
@@ -278,7 +291,7 @@ function sendLogout(emp, reason) {
       ? `Hết phiên (không thao tác ${IDLE_MS / 60000} phút), hoạt động cuối ${hhmmss(emp.at)}`
       : 'Đăng xuất thủ công';
     fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
-      body: JSON.stringify({ action: 'logout', emp: emp.id, note }) }).catch(() => {});
+      body: JSON.stringify({ action: 'logout', emp: emp.id, note, dev: getDev() }) }).catch(() => {});
   } catch { /* bỏ qua */ }
 }
 
@@ -287,20 +300,31 @@ function logout(reason, msg) {
   const e = S.emp;
   if (!e) return;
   sendLogout(e, reason);
-  S.work = null; jobStore.clear();
+  S.work = null; // KHOÁ CỨNG: giữ jobStore, mã làm dở vẫn còn khi đăng nhập lại đúng người đó
   closeWork();
   setEmp(null);
   $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; $('#empCode').value = '';
   if (msg) toast(msg);
 }
 function checkIdle() {
-  // Đang làm dở một mã: không tự đăng xuất theo thời gian rảnh (người ta đang đi chuyển hàng, không chạm máy).
-  // Thay vào đó mã làm dở được giữ tối đa 1 giờ, quá hạn thì huỷ (có ghi log).
-  if (S.work) {
-    if (Date.now() - S.work.startedAt > WORK_TTL_MS) discardWork('timeout', 'Mã làm quá 1 giờ nên đã huỷ');
-    return;
-  }
+  // Đang làm dở một mã: KHÔNG tự đăng xuất và KHÔNG hết hạn (người ta đang đi chuyển hàng, không chạm máy).
+  // Mã dở được giữ cho tới khi bấm Hoàn thành.
+  if (S.work) return;
   if (S.emp && Date.now() - S.emp.at > IDLE_MS) logout('idle', 'Hết phiên, vui lòng đăng nhập lại');
+}
+
+// ---------- Tên máy: hỏi MỘT lần ở lần mở đầu tiên, sau đó nhớ luôn ----------
+function renderDev() {
+  const d = getDev();
+  $('#devSetup').hidden = !!d;
+  $('#devLabel').textContent = d ? 'Máy: ' + d : '';
+  if (!d) setTimeout(() => $('#devInput').focus(), 50);
+}
+function saveDev(v) {
+  v = String(v || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  if (!v) { toast('Nhập tên máy, ví dụ PDA-01'); return; }
+  try { localStorage.setItem('dev', v); } catch {}
+  renderDev(); renderEmp();
 }
 
 // ---------- Cách nhập: Quét (PDA) / Nhập tay có gợi ý ----------
@@ -398,7 +422,7 @@ async function lookupItem(raw) {
     }
     // Mã phiên do proxy tạo (Họ tên_Mã hàng_giờ bắt đầu) và trả về trong __job; proxy cũ/chạy thẳng thì dùng mã dự phòng
     const job = (j.__job && j.__job.id) || newJobId();
-    S.work = { emp: S.emp.id, job, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
+    S.work = { emp: S.emp.id, empName: S.emp.name, job, code, name: j.ItemName || 'Không rõ tên', q, startedAt: Date.now(), done: new Set(), sending: false };
     out.innerHTML = '';
     jobStore.save();
     renderWork();
@@ -412,13 +436,12 @@ async function lookupItem(raw) {
 
 // ---------- Làm việc với một mã hàng: màn hình riêng phủ kín, KHOÁ cho tới khi bấm Hoàn thành ----------
 // Quét mã -> mở màn hình này. Chạm line đã xong để chốt (chốt rồi thì không chạm bỏ được, phải giữ ô).
-// Chỉ "Hoàn thành" mới đóng màn hình. Lối thoát duy nhất khác là giữ nút "Huỷ mã" (để khỏi kẹt khi quét nhầm mã).
-const WORK_TTL_MS = 60 * 60000; // mã làm dở được giữ trên máy tối đa 1 giờ (kể cả lỡ thoát app); quá hạn thì huỷ
+// KHOÁ CỨNG: chỉ "Hoàn thành" mới đóng màn hình. Không có nút huỷ, không hết hạn, không đổi người, không tự đăng xuất.
+// Lỡ thoát app/tắt máy thì mở lại, đăng nhập lại ĐÚNG NGƯỜI đó là hiện lại đúng mã đó, làm tiếp cho tới khi Hoàn thành.
 const HOLD_UNDO_MS = 1500;      // phải giữ ô đã chốt chừng này mới bỏ chọn được
-const HOLD_CANCEL_MS = 2000;    // phải giữ nút Huỷ mã chừng này mới huỷ
 
 const todoOf = w => w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
-const snap = w => ({ emp: w.emp, job: w.job, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
+const snap = w => ({ emp: w.emp, empName: w.empName, job: w.job, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
 
 // Lưu mã đang làm dở lên máy: lỡ đóng app/tắt máy thì đăng nhập lại là làm tiếp, không phải quét lại mã
 const jobStore = {
@@ -442,39 +465,16 @@ function closeWork() {
   if (history.state && history.state.work) { skipPop = true; try { history.back(); } catch { skipPop = false; } }
 }
 
-// Báo proxy mã bị huỷ / quá hạn (không chờ, không báo lỗi). job = snap(...) hoặc bản đã lưu trên máy.
-function sendCancel(job, reason) {
-  try {
-    const base = baseOrThrow();
-    if (!isProxy(base)) return;
-    const all = todoOf(job), dn = new Set(job.done);
-    const pick = ks => ks.map(k => ({ l: LINES[k], q: job.q[k] }));
-    fetch(base, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
-      body: JSON.stringify({ action: 'complete', cancel: true, reason, emp: job.emp, job: job.job, itemCode: job.code, itemName: job.name,
-        startedAt: job.startedAt, endedAt: Date.now(), done: pick(all.filter(k => dn.has(k))), rest: pick(all.filter(k => !dn.has(k))) }) }).catch(() => {});
-  } catch { /* bỏ qua */ }
-}
-
-// Bỏ mã đang làm dở (giữ nút Huỷ mã, hoặc quá 1 giờ). Có ghi log để biết mã nào bị huỷ.
-function discardWork(reason, msg) {
-  const w = S.work;
-  if (w) sendCancel(snap(w), reason);
-  S.work = null; jobStore.clear(); closeWork();
-  if (msg) toast(msg);
-  if (S.emp) $('#moveCode').focus();
-}
-
-// Mở lại mã làm dở sau khi đăng nhập (hoặc mở lại app). Chỉ đúng người đó, và chưa quá 1 giờ.
+// Mở lại mã làm dở (sau khi đăng nhập hoặc mở lại app). Trả về false nếu mã dở thuộc về NGƯỜI KHÁC (khi đó không cho vào).
 function restoreJob() {
   const j = jobStore.load();
-  if (!j || !S.emp || S.work) return;
-  if (Date.now() - j.startedAt > WORK_TTL_MS) { sendCancel(j, 'timeout'); jobStore.clear(); toast(`Mã ${j.code} làm dở quá 1 giờ nên đã huỷ`); return; }
-  if (j.emp !== S.emp.id) { sendCancel(j, 'other'); jobStore.clear(); return; } // người khác dùng máy: bỏ việc dở của người trước
-  S.work = { emp: j.emp, job: j.job, code: j.code, name: j.name, q: j.q, startedAt: j.startedAt, done: new Set(j.done), sending: false };
+  if (!j || !S.emp || S.work) return true;
+  if (j.emp !== S.emp.id) return false;
+  S.work = { emp: j.emp, empName: j.empName, job: j.job, code: j.code, name: j.name, q: j.q, startedAt: j.startedAt, done: new Set(j.done), sending: false };
   renderWork();
   toast('Tiếp tục mã đang làm dở');
+  return true;
 }
-
 function renderWork() {
   const w = S.work;
   if (!w) return;
@@ -494,8 +494,9 @@ function renderWork() {
   $('#wsBody').innerHTML = `<div class="ws-name">${esc(w.name)}</div>
     <div class="ws-meta">${esc(w.code)} · Tổng ${sum(w.q)}</div>
     ${zone('KHU A', 'zA', 0)}${zone('KHU B', 'zB', 7)}
-    <p class="hint" style="margin-top:16px">Chạm từng line đã làm xong để chốt. <b>Phải chốt đủ tất cả các line</b> thì mới bấm được Hoàn thành.
-      Chốt nhầm muốn bỏ thì <b>giữ ô 1,5 giây</b>. Quét nhầm mã thì giữ nút <b>Huỷ mã</b> 2 giây.</p>`;
+    <p class="hint" style="margin-top:16px">Chạm từng line đã làm xong để chốt. <b>Phải chốt đủ tất cả các line</b> rồi bấm <b>Hoàn thành</b> thì mới làm được việc khác.
+      Chốt nhầm muốn bỏ thì <b>giữ ô 1,5 giây</b>.</p>`;
+  $('#wsWho').textContent = S.emp ? S.emp.name : '';
   $('#wsBody').scrollTop = 0;
   updateWorkUI();
   openWork();
@@ -713,6 +714,8 @@ function init() {
   $('#sort').addEventListener('change', renderList);
   $('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.code); });
   $('#dlgClose').addEventListener('click', () => $('#dlg').close());
+  $('#formDev').addEventListener('submit', e => { e.preventDefault(); saveDev($('#devInput').value); });
+  $('#devLabel').addEventListener('click', () => { $('#devInput').value = getDev(); $('#devSetup').hidden = false; $('#devInput').focus(); });
   $$('.seg button').forEach(b => b.addEventListener('click', () => { S.mode = b.dataset.mode; store.set('inputMode', S.mode); applyMode(); }));
   $('#empCode').addEventListener('input', suggestEmps);
   $('#moveCode').addEventListener('input', suggestItems);
@@ -727,15 +730,12 @@ function init() {
     if (cell) return tapLine(Number(cell.dataset.k));
     if (e.target.closest('#btnAll')) return selectAllLines();
     if (e.target.closest('#btnDone')) return completeWork();
-    if (e.target.closest('#wsCancel')) toast('Muốn huỷ mã này thì giữ nút 2 giây');
   });
-  // Giữ ô đã chốt 1,5 giây để bỏ chọn; giữ nút Huỷ mã 2 giây để huỷ. Thả sớm/cuộn là thôi.
+  // Giữ ô đã chốt 1,5 giây để bỏ chọn. Thả sớm/cuộn là thôi.
   ws.addEventListener('pointerdown', e => {
     if (!S.work || S.work.sending) return;
     const cell = e.target.closest('.ws-cell.done');
     if (cell) return startHold(HOLD_UNDO_MS, () => undoLine(Number(cell.dataset.k)), cell);
-    const x = e.target.closest('#wsCancel');
-    if (x) startHold(HOLD_CANCEL_MS, () => discardWork('cancel', 'Đã huỷ mã này'), x);
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => ws.addEventListener(ev, cancelHold, true));
   ws.addEventListener('contextmenu', e => e.preventDefault()); // chặn menu hiện ra khi giữ lâu
@@ -773,6 +773,7 @@ function init() {
   }
   renderList(); renderStatus();
   renderEmp();      // chưa đăng nhập: hiện màn hình đăng nhập
+  renderDev();      // máy chưa có tên: hỏi tên máy một lần
   restoreJob();     // lỡ tải lại trang giữa chừng: mở lại mã đang làm dở (phải chạy TRƯỚC checkIdle)
   checkIdle();      // phiên cũ quá hạn thì đăng xuất (và ghi log); đang có mã làm dở thì không đăng xuất
   showTab(ENABLED_TABS.includes(S.tab) ? S.tab : 'list');

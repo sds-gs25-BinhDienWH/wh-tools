@@ -163,8 +163,6 @@ code{background:var(--bg);border:1px solid var(--border);border-radius:4px;paddi
 .ws-top button{height:40px;padding:0 14px;border:1.5px solid rgba(255,255,255,.45);border-radius:10px;color:#fff;font-size:14px;font-weight:800}
 /* thanh tô dần khi đang giữ nút / ô (bỏ chọn một line, huỷ mã) */
 @keyframes holdfill{to{background-size:100% 100%}}
-.ws-top #wsCancel{background-image:linear-gradient(var(--red),var(--red));background-repeat:no-repeat;background-size:0% 100%;user-select:none;-webkit-user-select:none}
-.ws-top #wsCancel.holding{animation:holdfill var(--hold,2s) linear forwards}
 .ws-cell.done.holding{background-image:linear-gradient(var(--red),var(--red));background-repeat:no-repeat;background-size:0% 100%;
   animation:holdfill var(--hold,1.5s) linear forwards}
 .ws-title{font-size:16px;font-weight:800;letter-spacing:.3px}
@@ -213,3 +211,8 @@ dialog .cell small{font-size:11px}
 dialog .cell b{font-size:21px}
 dialog .totals{font-size:16px;gap:8px 18px;margin-top:12px}
 dialog button{width:100%;margin-top:16px;height:54px;border-radius:var(--radius-sm);background:var(--navy);color:#fff;font-weight:800;font-size:16px}
+
+.ws-who{font-size:14px;font-weight:800;opacity:.9}
+
+.devsetup{z-index:9600}
+.dev-label{text-align:center;color:var(--muted);font-size:12px;font-weight:700;margin:-8px 0 10px;cursor:pointer}

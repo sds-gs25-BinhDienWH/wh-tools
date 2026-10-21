@@ -54,12 +54,14 @@ function testSetup() {
 }
 
 // Mở địa chỉ .../exec của proxy trên trình duyệt sẽ thấy dòng version này: cho biết proxy đang chạy bản nào.
-const VERSION = '2026-10-21f · dashboard COLD WH Daily Progress: hiện tên ngắn (cột E)';
+const VERSION = '2026-10-22d · ghi tên máy (cột Máy) · Actual đối chiếu hàng chờ thật · tự vá SL đã điều trống · khoá cứng: không huỷ, không hết hạn, đóng được dòng bỏ dở · Actual theo ngày hoàn thành';
 function doGet() { return out({ ok: true, version: VERSION, allow: Object.keys(ALLOW) }); }
 
+let DEV_ = '';                                   // tên máy (PDA-01...) của lệnh đang xử lý, ghi vào cột Máy
 function doPost(e) {
   try {
     const req = JSON.parse(e.postData.contents);
+    DEV_ = String(req.dev || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 30);
 
     if (req.action === 'login') return out(login_(req.emp));
     if (req.action === 'logout') return out(logout_(req.emp, req.note));
@@ -175,7 +177,7 @@ function dashboard_(key) {
   const need = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
   if (need && String(key || '') !== need) return { __error: 'Sai khoá xem bảng (DASH_KEY)' };
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('dash7');
+  const hit = cache.get('dash9');
   if (hit) return JSON.parse(hit);                 // nhiều TV cùng mở thì chỉ tính một lần mỗi 8 giây
 
   const fmt = function (d, p) { return Utilities.formatDate(d, TZ, p); };
@@ -189,7 +191,28 @@ function dashboard_(key) {
     res.plan.items = Number(pl.getRange('B4').getValue()) || 0;
   } catch (e) { console.error('Dashboard: lỗi đọc Plan: ' + e); }
 
-  // Actual + Top 5: đếm từ tab "Điều hàng" (chỉ mã XONG ĐỦ có giờ bắt đầu là hôm nay)
+  // Hàng chờ còn lại: tổng khu A + khu B đang chờ điều, lấy từ server kho (cache 15 giây trong fetchUpstream_)
+  let pendingOk = false;
+  const pendingCodes = {};                                        // mã hàng còn trong hàng chờ của server kho
+  try {
+    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 8);
+    if (r.ok) {
+      const j = JSON.parse(r.text);
+      const rows = Array.isArray(j.data) ? j.data : [];            // hết hàng chờ: data = null
+      const LN = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];
+      pendingOk = true;
+      rows.forEach(function (it) {
+        if (it.ItemCode != null) pendingCodes[String(it.ItemCode).trim()] = true;
+        LN.forEach(function (l) {
+          const q = Number(it[l]) || 0;
+          if (l.charAt(0) === 'A') res.pending.a += q; else res.pending.b += q;
+        });
+      });
+      res.pending.total = res.pending.a + res.pending.b;
+    }
+  } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
+
+  // Actual + Top 5: đếm từ tab "Điều hàng" (chỉ mã XONG ĐỦ có ngày hoàn thành là hôm nay)
   try {
     const sh = logSs_().getSheetByName(JOB_SHEET);
     if (sh && sh.getLastRow() > 1) {
@@ -199,15 +222,35 @@ function dashboard_(key) {
       let short = {};
       try { short = shortNames_(); } catch (e) { console.error('Dashboard: lỗi đọc tên ngắn: ' + e); }
       const people = {};
-      vals.forEach(function (v) {
-        if (!(v[0] instanceof Date) || fmt(v[0], 'yyyyMMdd') !== today) return;
-        if (String(v[7]) !== 'XONG ĐỦ') return;
-        const q = Number(v[10]) || 0, id = String(v[3]);
+      const doneCodes = {}, stuck = {};
+      const add = function (v, q) {
+        const id = String(v[3]);
         res.actual.qty += q; res.actual.items++;
         // Hiện TÊN NGẮN (cột E); nhân viên chưa có tên ngắn thì dùng họ tên đầy đủ
         const p = people[id] || (people[id] = { id: id, name: short[normId_(id)] || String(v[4]), qty: 0, items: 0 });
         p.qty += q; p.items++;
+      };
+      vals.forEach(function (v) {
+        const st = String(v[7]), code = String(v[5]).trim();
+        const doneAt = v[1] instanceof Date ? v[1] : v[0];                // ngày hoàn thành (cột B), trống thì cột A
+        if (!(v[0] instanceof Date)) return;
+        if (st === 'XONG ĐỦ') {
+          if (!(doneAt instanceof Date) || fmt(doneAt, 'yyyyMMdd') !== today) return;
+          doneCodes[code] = true;
+          add(v, Number(v[10]) || ((Number(v[8]) || 0) + (Number(v[9]) || 0)));
+        } else if (fmt(v[0], 'yyyyMMdd') === today) {
+          stuck[code] = v;                                                // đã quét hôm nay nhưng chưa đóng đúng (ĐANG LÀM, ĐÃ HUỶ, BỎ DỞ...): giữ dòng mới nhất của mỗi mã
+        }
       });
+      // Mã đã quét nhưng kẹt trạng thái mà KHÔNG CÒN trong hàng chờ của server kho = thực tế đã điều xong: tính vào Actual
+      // (chỉ làm khi lấy được hàng chờ; dòng ĐANG LÀM mà mã còn trong hàng chờ thì chưa tính)
+      if (pendingOk) {
+        Object.keys(stuck).forEach(function (code) {
+          if (doneCodes[code] || pendingCodes[code]) return;
+          const v = stuck[code];
+          add(v, (Number(v[8]) || 0) + (Number(v[9]) || 0));
+        });
+      }
       // Tất cả nhân viên đã hoàn thành mã hôm nay, xếp theo số lượng giảm dần (tối đa 30 người)
       const list = Object.keys(people).map(function (id) { return people[id]; })
         .sort(function (a, b) { return b.qty - a.qty || b.items - a.items; }).slice(0, 30);
@@ -221,24 +264,7 @@ function dashboard_(key) {
     }
   } catch (e) { console.error('Dashboard: lỗi đọc tiến độ: ' + e); }
 
-  // Hàng chờ còn lại: tổng khu A + khu B đang chờ điều, lấy từ server kho (cache 15 giây trong fetchUpstream_)
-  try {
-    const r = fetchUpstream_('GET', '/sftp/getAssortingPending', '', 'GET /sftp/getAssortingPending', 8);
-    if (r.ok) {
-      const j = JSON.parse(r.text);
-      const rows = Array.isArray(j.data) ? j.data : [];            // hết hàng chờ: data = null
-      const LN = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];
-      rows.forEach(function (it) {
-        LN.forEach(function (l) {
-          const q = Number(it[l]) || 0;
-          if (l.charAt(0) === 'A') res.pending.a += q; else res.pending.b += q;
-        });
-      });
-      res.pending.total = res.pending.a + res.pending.b;
-    }
-  } catch (e) { console.error('Dashboard: lỗi lấy hàng chờ: ' + e); }
-
-  cache.put('dash7', JSON.stringify(res), 8);
+  cache.put('dash9', JSON.stringify(res), 8);
   return res;
 }
 // ---------- Bảng NĂNG SUẤT: có TÊN NGƯỜI và THỜI GIAN làm việc nên BẮT BUỘC có DASH_KEY ----------
@@ -385,7 +411,7 @@ function jobSheet_() {
   if (!sh) {
     sh = book.insertSheet(JOB_SHEET);
     sh.appendRow(['Bắt đầu', 'Kết thúc', 'Thời lượng (giây)', 'Mã NV', 'Họ tên', 'Mã hàng', 'Tên hàng', 'Trạng thái',
-      'Chờ khu A', 'Chờ khu B', 'SL đã điều', 'Mã phiên']);
+      'Chờ khu A', 'Chờ khu B', 'SL đã điều', 'Mã phiên', 'Máy']);
     sh.setFrozenRows(1);
     sh.getRange('A:B').setNumberFormat('dd/MM/yyyy HH:mm:ss');
     ['D:D', 'F:F', 'L:L'].forEach(function (r) { sh.getRange(r).setNumberFormat('@'); }); // giữ nguyên số 0 đầu, không thành số khoa học
@@ -393,6 +419,7 @@ function jobSheet_() {
     // Tab tạo từ bản cũ (có 2 cột "Line đã xong", "Line chưa xong" ở K, L): xoá 2 cột đó, dữ liệu còn lại tự dịch sang trái
     sh.deleteColumns(11, 2);
   }
+  if (sh.getRange(1, 13).getValue() === '' && String(sh.getRange(1, 12).getValue()) === 'Mã phiên') sh.getRange(1, 13).setValue('Máy').setFontWeight('bold');
   return sh;
 }
 
@@ -422,7 +449,7 @@ function logItemScan_(emp, body, r) {
     lock.waitLock(5000);
     try {
       jobSheet_().appendRow([now, '', '', emp.id, emp.name, itemCode, String(j.ItemName || '').slice(0, 100),
-        JOB_OPEN, a, b, '', id]);
+        JOB_OPEN, a, b, '', id, DEV_]);
     } finally { lock.releaseLock(); }
     closeStaleJobs_();
     return { id: id };
@@ -432,7 +459,7 @@ function logItemScan_(emp, body, r) {
   }
 }
 
-// Dọn dòng ĐANG LÀM bị bỏ quên (PDA hỏng/tắt app, không bao giờ báo lại): quá 70 phút thì đổi trạng thái.
+// Vá cột Kết thúc còn trống (dòng ĐANG LÀM được giữ nguyên, không tự đóng).
 // Chạy tối đa 10 phút một lần, nhân dịp có người quét mã; chỉ xét 2000 dòng cuối cho nhẹ.
 function closeStaleJobs_() {
   const cache = CacheService.getScriptCache();
@@ -442,13 +469,51 @@ function closeStaleJobs_() {
   const last = sh.getLastRow();
   if (last < 2) return;
   const n = Math.min(last - 1, 2000), first = last - n + 1;
-  const vals = sh.getRange(first, 1, n, 8).getValues(); // cột A..H
-  const cutoff = Date.now() - 70 * 60000;
+  const vals = sh.getRange(first, 1, n, 11).getValues(); // cột A..K
+  // KHOÁ CỨNG: không còn tự đánh dấu BỎ DỞ. Dòng ĐANG LÀM giữ nguyên cho tới khi công nhân bấm Hoàn thành.
+  fillMissingEnds_(sh, first, vals);
+  fillMissingQty_(sh, first, vals);
+}
+
+// Dòng đã đóng (không còn ĐANG LÀM) và có Thời lượng nhưng cột Kết thúc bị trống: tính lại Kết thúc = Bắt đầu + Thời lượng.
+// Trả về số dòng đã vá. vals = giá trị cột A..H bắt đầu từ dòng firstRow.
+function fillMissingEnds_(sh, firstRow, vals) {
+  let fixed = 0;
   vals.forEach(function (v, i) {
-    if (String(v[7]) === JOB_OPEN && v[0] instanceof Date && v[0].getTime() < cutoff) {
-      sh.getRange(first + i, 8).setValue('BỎ DỞ (KHÔNG BÁO)');
+    if (String(v[7]) !== JOB_OPEN && v[0] instanceof Date && v[1] === '' && typeof v[2] === 'number' && v[2] >= 0) {
+      const cell = sh.getRange(firstRow + i, 2);
+      cell.setNumberFormat('dd/MM/yyyy HH:mm:ss').setValue(new Date(v[0].getTime() + v[2] * 1000));
+      fixed++;
     }
   });
+  return fixed;
+}
+
+// Dòng XONG ĐỦ mà "SL đã điều" (cột K) bị trống: XONG ĐỦ nghĩa là đã chốt mọi line nên SL đã điều = Chờ khu A + Chờ khu B lúc quét.
+function fillMissingQty_(sh, firstRow, vals) {
+  let fixed = 0;
+  vals.forEach(function (v, i) {
+    if (String(v[7]) === 'XONG ĐỦ' && v[10] === '' && (Number(v[8]) || 0) + (Number(v[9]) || 0) > 0) {
+      sh.getRange(firstRow + i, 11).setValue((Number(v[8]) || 0) + (Number(v[9]) || 0));
+      fixed++;
+    }
+  });
+  return fixed;
+}
+
+/**
+ * Chạy MỘT LẦN trong trình chỉnh sửa (chọn "repairEndTimes" > Chạy) để vá TOÀN BỘ các dòng bị trống cột Kết thúc.
+ * Kết quả xem ở "Nhật ký thực thi". Sau đó proxy cũng tự vá mỗi khi có người quét mã (xem closeStaleJobs_).
+ */
+function repairEndTimes() {
+  const sh = jobSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) { console.log('Tab Điều hàng chưa có dữ liệu.'); return 0; }
+  const vals = sh.getRange(2, 1, last - 1, 11).getValues();
+  const fixed = fillMissingEnds_(sh, 2, vals);
+  const q = fillMissingQty_(sh, 2, vals);
+  console.log('Đã vá cột Kết thúc cho ' + fixed + ' dòng, cột SL đã điều cho ' + q + ' dòng.');
+  return fixed + q;
 }
 
 // Đóng dòng đã mở lúc quét (điền giờ kết thúc, thời lượng, trạng thái, số lượng đã điều).
@@ -466,18 +531,26 @@ function closeJob_(emp, req, status, qty) {
     }
     const now = new Date();
     if (row) {
-      if (String(sh.getRange(row, 8).getValue()) !== JOB_OPEN) return; // đã đóng rồi (bấm/gửi lại): bỏ qua, không ghi đè
+      const cur = String(sh.getRange(row, 8).getValue());
+      // đã đóng rồi (bấm/gửi lại): bỏ qua, không ghi đè. Dòng cũ bị đánh dấu bỏ dở vẫn được đóng lại bình thường.
+      if (cur !== JOB_OPEN && cur !== 'BỎ DỞ (KHÔNG BÁO)' && cur !== 'QUÁ 1 GIỜ') return;
       const start = sh.getRange(row, 1).getValue();
       const sec = start instanceof Date ? Math.round((now - start) / 1000) : '';
-      sh.getRange(row, 2, 1, 2).setValues([[now, sec]]);                          // B Kết thúc, C Thời lượng
+      sh.getRange(row, 1, 1, 2).setNumberFormat('dd/MM/yyyy HH:mm:ss');            // A, B cùng một kiểu giờ
+      sh.getRange(row, 2).setValue(now);                                          // B Kết thúc
+      sh.getRange(row, 3).setValue(sec);                                          // C Thời lượng
       sh.getRange(row, 8).setValue(status);                                       // H Trạng thái
-      sh.getRange(row, 11).setValue(qty);                                         // K SL đã điều
+      let q = qty;
+      if (status === 'XONG ĐỦ' && !(Number(q) > 0)) q = (Number(sh.getRange(row, 9).getValue()) || 0) + (Number(sh.getRange(row, 10).getValue()) || 0); // app không gửi SL: lấy Chờ A + B
+      sh.getRange(row, 11).setValue(q);                                           // K SL đã điều
+      SpreadsheetApp.flush();
+      if (sh.getRange(row, 2).getValue() === '') sh.getRange(row, 2).setValue(now); // đọc lại: nếu Kết thúc vẫn trống thì ghi lại
     } else {
       // Không thấy dòng lúc quét (ghi lúc quét bị lỗi, hoặc app bản cũ): ghi một dòng đầy đủ bằng giờ máy PDA
       const s = new Date(Number(req.startedAt)), e = new Date(Number(req.endedAt));
       const ok = !isNaN(s) && !isNaN(e) && e >= s;
       sh.appendRow([ok ? s : now, ok ? e : now, ok ? Math.round((e - s) / 1000) : '', emp.id, emp.name,
-        String(req.itemCode || '').slice(0, 60), String(req.itemName || '').slice(0, 100), status, '', '', qty, jobId]);
+        String(req.itemCode || '').slice(0, 60), String(req.itemName || '').slice(0, 100), status, '', '', qty, jobId, DEV_]);
     }
   } finally { lock.releaseLock(); }
 }
@@ -512,6 +585,7 @@ function safeLog_(row) {
 }
 
 function appendLog_(row) {
+  if (row.length === 10) row.push(DEV_);          // cột K: Máy
   const lock = LockService.getScriptLock();
   lock.waitLock(5000);
   try {
@@ -519,12 +593,13 @@ function appendLog_(row) {
     let sh = book.getSheetByName(LOG_SHEET);
     if (!sh) {
       sh = book.insertSheet(LOG_SHEET);
-      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú']);
+      sh.appendRow(['Thời gian', 'Mã NV', 'Họ tên', 'Hành động', 'Mã hàng', 'Tên hàng', 'Kết quả', 'Chờ khu A', 'Chờ khu B', 'Ghi chú', 'Máy']);
       sh.setFrozenRows(1);
       sh.getRange('A:A').setNumberFormat('dd/MM/yyyy HH:mm:ss');
       sh.getRange('B:B').setNumberFormat('@');
       sh.getRange('E:E').setNumberFormat('@');
     }
+    if (sh.getRange(1, 11).getValue() === '') sh.getRange(1, 11).setValue('Máy').setFontWeight('bold');
     sh.appendRow(row);
   } finally { lock.releaseLock(); }
 }

@@ -18,12 +18,25 @@
 <div id="netBar" class="net-bar"></div>
 
 <!-- Màn hình đăng nhập: chưa biết ai đang làm thì chưa vào được chức năng nào -->
+<div id="devSetup" class="login devsetup" hidden>
+  <div class="login-card">
+    <img class="login-logo" src="logo.svg?v=4" alt="">
+    <h2>Tên máy này là gì?</h2>
+    <p class="hint" style="text-align:center;margin:0 0 12px">Chỉ nhập một lần. Ví dụ: PDA-01 (hoặc số serial dán sau máy).</p>
+    <form id="formDev" class="row">
+      <input id="devInput" autocomplete="off" autocapitalize="characters" placeholder="PDA-01" maxlength="30">
+      <button type="submit">Lưu</button>
+    </form>
+  </div>
+</div>
+
 <div id="login" class="login" hidden>
   <div class="login-card">
     <img class="login-logo" src="logo.svg?v=4" alt="">
     <div class="login-name">SDS-GS25</div>
     <div class="login-sub">Binh Dien Warehouse <span class="tool-badge">TOOL</span></div>
     <h2>Ai đang làm việc?</h2>
+    <div id="devLabel" class="dev-label" title="Bấm để đổi tên máy"></div>
     <div class="seg" role="group" aria-label="Cách nhập">
       <button type="button" data-mode="scan" class="on">Quét thẻ</button>
       <button type="button" data-mode="type">Nhập tên</button>
@@ -164,7 +177,7 @@
 <!-- Màn hình làm việc với một mã hàng: phủ kín, đóng khi Hoàn thành hoặc Quay về -->
 <div id="workScreen" class="workscreen" hidden>
   <div class="ws-top">
-    <button id="wsCancel" type="button">Huỷ mã (giữ)</button>
+    <div id="wsWho" class="ws-who"></div>
     <div class="ws-title">Điều hàng</div>
   </div>
   <div id="wsBody" class="ws-body"></div>
