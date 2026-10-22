@@ -317,7 +317,8 @@ function checkIdle() {
 function renderDev() {
   const d = getDev();
   $('#devSetup').hidden = !!d;
-  $('#devLabel').textContent = d ? 'Máy: ' + d : '';
+  $('#devLabel').textContent = d ? 'Máy: ' + d + '  ·  ĐỔI' : '';
+  $('#devLabel').hidden = !d;
   if (!d) setTimeout(() => $('#devInput').focus(), 50);
 }
 function saveDev(v) {
@@ -439,6 +440,7 @@ async function lookupItem(raw) {
 // KHOÁ CỨNG: chỉ "Hoàn thành" mới đóng màn hình. Không có nút huỷ, không hết hạn, không đổi người, không tự đăng xuất.
 // Lỡ thoát app/tắt máy thì mở lại, đăng nhập lại ĐÚNG NGƯỜI đó là hiện lại đúng mã đó, làm tiếp cho tới khi Hoàn thành.
 const HOLD_UNDO_MS = 1500;      // phải giữ ô đã chốt chừng này mới bỏ chọn được
+const HOLD_CANCEL_MS = 2000;    // giữ nút Huỷ mã chừng này mới huỷ (chỉ khi CHƯA chốt line nào: bắn nhầm mã)
 
 const todoOf = w => w.q.map((v, k) => v > 0 ? k : -1).filter(k => k >= 0); // chỉ line còn hàng mới chạm được
 const snap = w => ({ emp: w.emp, empName: w.empName, job: w.job, code: w.code, name: w.name, q: w.q, startedAt: w.startedAt, done: [...w.done] });
@@ -463,6 +465,30 @@ function closeWork() {
   cancelHold();
   $('.page').inert = !S.emp;
   if (history.state && history.state.work) { skipPop = true; try { history.back(); } catch { skipPop = false; } }
+}
+
+// Huỷ mã bắn nhầm: chỉ được khi chưa chốt line nào. Ghi ĐÃ HUỶ vào sheet rồi đóng màn hình làm việc.
+async function cancelWork() {
+  const w = S.work;
+  if (!w || w.sending) return;
+  if (w.done.size > 0) { toast('Đã chốt line rồi thì phải làm tiếp và bấm Hoàn thành'); return; }
+  w.sending = true; updateWorkUI();
+  try {
+    const base = baseOrThrow();
+    if (isProxy(base)) {
+      await request(signal => proxyFetch(base, { action: 'complete', emp: S.emp.id, job: w.job, itemCode: w.code, itemName: w.name,
+        startedAt: w.startedAt, endedAt: Date.now(), cancel: true, reason: 'cancel', done: [], rest: [] }, signal));
+    }
+    $('#moveOut').innerHTML = '';
+    S.work = null; jobStore.clear();
+    closeWork();
+    toast('Đã huỷ mã này');
+    $('#moveCode').focus();
+  } catch (e) {
+    w.sending = false; updateWorkUI();
+    if (/^NO_EMP/.test(e.message || '')) { logout('invalid', 'Phiên không hợp lệ, vui lòng đăng nhập lại'); return; }
+    toast('Chưa huỷ được: ' + (e.message || e));
+  }
 }
 
 // Mở lại mã làm dở (sau khi đăng nhập hoặc mở lại app). Trả về false nếu mã dở thuộc về NGƯỜI KHÁC (khi đó không cho vào).
@@ -495,7 +521,7 @@ function renderWork() {
     <div class="ws-meta">${esc(w.code)} · Tổng ${sum(w.q)}</div>
     ${zone('KHU A', 'zA', 0)}${zone('KHU B', 'zB', 7)}
     <p class="hint" style="margin-top:16px">Chạm từng line đã làm xong để chốt. <b>Phải chốt đủ tất cả các line</b> rồi bấm <b>Hoàn thành</b> thì mới làm được việc khác.
-      Chốt nhầm muốn bỏ thì <b>giữ ô 1,5 giây</b>.</p>`;
+      Chốt nhầm muốn bỏ thì <b>giữ ô 1,5 giây</b>. Bắn nhầm mã (chưa chốt line nào) thì giữ nút <b>Huỷ mã</b> 2 giây.</p>`;
   $('#wsWho').textContent = S.emp ? S.emp.name : '';
   $('#wsBody').scrollTop = 0;
   updateWorkUI();
@@ -516,6 +542,7 @@ function updateWorkUI() {
   bd.disabled = w.done.size !== n || w.sending; // bắt buộc chốt đủ MỌI line mới hoàn thành được
   bd.textContent = w.sending ? 'Đang ghi…' : `Hoàn thành (${w.done.size}/${n})`;
   $('#btnAll').disabled = w.sending || w.done.size === n;
+  $('#wsCancel').hidden = w.done.size > 0;      // đã chốt line thì không còn huỷ được, phải Hoàn thành
 }
 
 function tapLine(k) {
@@ -732,12 +759,15 @@ function init() {
     if (cell) return tapLine(Number(cell.dataset.k));
     if (e.target.closest('#btnAll')) return selectAllLines();
     if (e.target.closest('#btnDone')) return completeWork();
+    if (e.target.closest('#wsCancel')) toast('Bắn nhầm mã thì giữ nút này 2 giây để huỷ');
   });
   // Giữ ô đã chốt 1,5 giây để bỏ chọn. Thả sớm/cuộn là thôi.
   ws.addEventListener('pointerdown', e => {
     if (!S.work || S.work.sending) return;
     const cell = e.target.closest('.ws-cell.done');
     if (cell) return startHold(HOLD_UNDO_MS, () => undoLine(Number(cell.dataset.k)), cell);
+    const x = e.target.closest('#wsCancel');
+    if (x) startHold(HOLD_CANCEL_MS, cancelWork, x);
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => ws.addEventListener(ev, cancelHold, true));
   ws.addEventListener('contextmenu', e => e.preventDefault()); // chặn menu hiện ra khi giữ lâu

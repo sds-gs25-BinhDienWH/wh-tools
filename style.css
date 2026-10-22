@@ -215,4 +215,7 @@ dialog button{width:100%;margin-top:16px;height:54px;border-radius:var(--radius-
 .ws-who{font-size:14px;font-weight:800;opacity:.9}
 
 .devsetup{z-index:9600}
-.dev-label{text-align:center;color:var(--muted);font-size:12px;font-weight:700;margin:-8px 0 10px;cursor:pointer}
+.dev-label{display:block;margin:-6px auto 12px;height:36px;padding:0 16px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--card);color:var(--navy);font-size:13px;font-weight:800;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.ws-top #wsCancel{background-image:linear-gradient(var(--red),var(--red));background-repeat:no-repeat;background-size:0% 100%;user-select:none;-webkit-user-select:none}
+.ws-top #wsCancel.holding{animation:holdfill var(--hold,2s) linear forwards}
+.ws-top #wsCancel[hidden]{display:none}
