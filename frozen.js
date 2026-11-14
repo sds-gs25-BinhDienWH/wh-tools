@@ -71,7 +71,7 @@ const FZ = (() => {
       const s = status(p);
       const b = s.done ? (s.diff ? '<span class="fz-badge bad">Lệch</span>' : '<span class="fz-badge ok">Đủ</span>')
         : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.items.length + ' mã</span>' : '<span class="fz-badge">' + p.items.length + ' mã</span>';
-      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
+      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + 'VN' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
     }).join('') + (ps.length > 8 ? '<p class="fz-meta">Còn ' + (ps.length - 8) + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
       || (g('fzQ').value.trim() ? '<p>Không có cửa hàng nào khớp.</p>' : '');
   }
@@ -80,7 +80,7 @@ const FZ = (() => {
   function openPO(po) {
     S.po = S.data.pos.find(p => p.po === po); S.last = null;
     g('fzList').hidden = true; g('fzCheck').hidden = false; g('fzLast').hidden = true;
-    g('fzTitle').innerHTML = esc(S.po.num) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
+    g('fzTitle').innerHTML = 'VN' + esc(S.po.num) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
     render(); focusScan();
   }
   function focusQ() { const i = g('fzQ'); i.value = ''; renderList(); setTimeout(() => i.focus(), 30); }
