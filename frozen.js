@@ -56,44 +56,42 @@ const FZ = (() => {
     S.po = null; g('fzList').hidden = false; g('fzCheck').hidden = true;
     renderList(); focusQ();
   }
+  // Khớp theo số cửa hàng (bỏ chữ VN): đầu số trước (005 -> 0052, 0053), rồi tới chứa số, rồi tới tên
+  function match(raw) {
+    const q = fold(raw.trim()).replace(/^vn/, '').replace(/\s+/g, '');
+    if (!q) return [];
+    const sc = p => p.num === q ? 0 : p.num.startsWith(q) ? 1 : p.num.includes(q) ? 2 : fold(p.storeName + ' ' + p.po).includes(q) ? 3 : 9;
+    return S.data.pos.map(p => [sc(p), p]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || (a[1].num < b[1].num ? -1 : 1)).map(x => x[1]);
+  }
   function renderList() {
-    const q = fold(g('fzQ').value.trim());
-    const ps = S.data.pos.filter(p => !q || fold(p.store + ' ' + p.storeName + ' ' + p.po).includes(q));
+    const ps = match(g('fzQ').value), total = S.data.pos.length;
     const done = S.data.pos.filter(p => prog(p.po).done).length;
-    g('fzMeta').textContent = 'PO ngày ' + S.data.date + ' · ' + ps.length + '/' + S.data.pos.length + ' PO · đã kiểm xong ' + done;
-    g('fzPos').innerHTML = ps.map(p => {
+    g('fzMeta').textContent = 'PO ngày ' + S.data.date + ' · đã kiểm xong ' + done + '/' + total + (g('fzQ').value.trim() ? ' · tìm thấy ' + ps.length : '');
+    g('fzPos').innerHTML = ps.slice(0, 8).map(p => {
       const s = status(p);
       const b = s.done ? (s.diff ? '<span class="fz-badge bad">Lệch</span>' : '<span class="fz-badge ok">Đủ</span>')
         : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.total + '</span>' : '<span class="fz-badge">' + p.total + ' sp</span>';
-      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + esc(p.store) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
-    }).join('') || '<p>Không có PO nào khớp.</p>';
+      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + '</small></div>' + b + '</div>';
+    }).join('') + (ps.length > 8 ? '<p class="fz-meta">Còn ' + (ps.length - 8) + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
+      || (g('fzQ').value.trim() ? '<p>Không có cửa hàng nào khớp.</p>' : '');
   }
 
   // ---------- Kiểm một PO ----------
   function openPO(po) {
-    S.po = S.data.pos.find(p => p.po === po); S.last = null; S.filter = 'todo';
+    S.po = S.data.pos.find(p => p.po === po); S.last = null;
     g('fzList').hidden = true; g('fzCheck').hidden = false; g('fzLast').hidden = true;
-    g('fzTitle').innerHTML = esc(S.po.store) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
-    g('fzTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.f === S.filter));
+    g('fzTitle').innerHTML = esc(S.po.num) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
     render(); focusScan();
   }
   function focusQ() { const i = g('fzQ'); i.value = ''; renderList(); setTimeout(() => i.focus(), 30); }
   function focusScan() { const i = g('fzScan'); i.value = ''; i.focus(); }
 
   const state = (it, n) => n === it[2] ? 'ok' : n > it[2] ? 'bad' : n > 0 ? 'wip' : '';
-  function render(flashKey) {
+  function render() {
     const p = S.po, c = prog(p.po).counts;
     let got = 0; p.items.forEach(it => got += Math.min(c[norm(it[0])] || 0, it[2]));
     const pct = p.total ? Math.round(got * 100 / p.total) : 0;
-    g('fzProg').innerHTML = 'Đã kiểm ' + got + '/' + p.total + ' sp (' + pct + '%)<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
-    const rows = p.items.map(it => ({ it, k: norm(it[0]), n: c[norm(it[0])] || 0 }));
-    const extra = Object.keys(c).filter(k => !p.map.has(k) && c[k] > 0).map(k => ({ it: [k, 'Mã ngoài PO', 0], k, n: c[k] }));
-    let list = rows.concat(extra);
-    if (S.filter === 'todo') list = list.filter(r => r.n !== r.it[2]);
-    if (S.filter === 'done') list = list.filter(r => r.n === r.it[2]);
-    list.sort((a, b) => (b.k === flashKey) - (a.k === flashKey) || (b.n > 0) - (a.n > 0));
-    g('fzItems').innerHTML = list.map(r => '<div class="fz-it ' + state(r.it, r.n) + (r.k === flashKey ? ' flash' : '') + '" data-k="' + esc(r.k) + '"><div class="nm">' + esc(r.it[1]) +
-      '<small>' + esc(r.it[0]) + '</small></div><div class="q">' + r.n + '<span> / ' + r.it[2] + '</span></div></div>').join('') || '<p>Không có dòng nào.</p>';
+    g('fzProg').innerHTML = 'Đã quét <b>' + got + '</b> / ' + p.total + ' sp (' + pct + '%)<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
   }
 
   function setCount(k, n) {
@@ -139,33 +137,27 @@ const FZ = (() => {
     if (S.bound) return; S.bound = true;
     g('fzPos').onclick = e => { const el = e.target.closest('.fz-po'); if (el) openPO(el.dataset.po); };
     g('fzQ').oninput = () => S.data && renderList();
-    g('fzQ').onkeydown = e => { // quét mã cửa hàng/PO + Enter: chỉ còn 1 PO thì vào luôn
+    g('fzQ').onkeydown = e => {
       if (e.key !== 'Enter' || !S.data) return;
-      const q = fold(g('fzQ').value.trim()); if (!q) return;
-      const ps = S.data.pos.filter(p => fold(p.store + ' ' + p.po).includes(q));
-      if (ps.length === 1) openPO(ps[0].po);
+      const ps = match(g('fzQ').value);
+      if (ps.length && (ps.length === 1 || match(g('fzQ').value)[0].num === g('fzQ').value.replace(/\D/g, ''))) openPO(ps[0].po);
     };
     g('fzBack').onclick = showList;
-    g('fzTabs').onclick = e => {
-      const b = e.target.closest('button'); if (!b) return; S.filter = b.dataset.f;
-      g('fzTabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); render();
-    };
     g('fzLast').onclick = e => {
       const b = e.target.closest('button'); if (!b || !S.last) return; const k = S.last, cur = prog(S.po.po).counts[k] || 0;
       if (b.dataset.d === 'set') {
         const v = prompt('Số lượng thực tế của mã này:', cur); if (v === null) return;
         const n = parseInt(v, 10); if (isNaN(n) || n < 0) return; setCount(k, n);
       } else setCount(k, cur + parseInt(b.dataset.d, 10));
-      showLast(k); render(k); focusScan();
+      showLast(k); render(); focusScan();
     };
-    g('fzItems').onclick = e => { const el = e.target.closest('.fz-it'); if (el) { showLast(el.dataset.k); focusScan(); } };
     g('fzScan').onkeydown = e => {
       if (e.key !== 'Enter') return;
       const raw = e.target.value.trim(); e.target.value = ''; if (!raw) return;
       const k = norm(raw), it = S.po.map.get(k);
       setCount(k, (prog(S.po.po).counts[k] || 0) + 1);
       const n = prog(S.po.po).counts[k];
-      beep(!!it && n <= it[2]); showLast(k); render(k);
+      beep(!!it && n <= it[2]); showLast(k); render();
     };
     const kbd = () => { S.kbd = !S.kbd; ['fzScan', 'fzQ'].forEach(id => g(id).inputMode = S.kbd ? 'text' : 'none'); const i = S.po ? g('fzScan') : g('fzQ'); i.blur(); i.focus(); };
     g('fzKbd').onclick = kbd; g('fzKbd2').onclick = kbd;
