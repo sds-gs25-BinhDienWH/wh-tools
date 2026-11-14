@@ -87,11 +87,12 @@ const FZ = (() => {
   function focusScan() { const i = g('fzScan'); i.value = ''; i.focus(); }
 
   const state = (it, n) => n === it[2] ? 'ok' : n > it[2] ? 'bad' : n > 0 ? 'wip' : '';
+  // Quét MÃ HÀNG (không quét từng cái): quét một lần là xác nhận mã đó đúng bằng số lượng trong PO. Số lượng chỉ để tham khảo.
   function render() {
     const p = S.po, c = prog(p.po).counts;
-    let got = 0; p.items.forEach(it => got += Math.min(c[norm(it[0])] || 0, it[2]));
-    const pct = p.total ? Math.round(got * 100 / p.total) : 0;
-    g('fzProg').innerHTML = 'Đã quét <b>' + got + '</b> / ' + p.total + ' sp (' + pct + '%)<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
+    let codes = 0, got = 0; p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n > 0) codes++; got += Math.min(n, it[2]); });
+    const pct = p.items.length ? Math.round(codes * 100 / p.items.length) : 0;
+    g('fzProg').innerHTML = 'Đã quét <b>' + codes + '</b> / ' + p.items.length + ' mã · ' + got + '/' + p.total + ' sp<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
   }
 
   function setCount(k, n) {
@@ -99,18 +100,17 @@ const FZ = (() => {
     if (n) pr.counts[k] = n; else delete pr.counts[k];
     pr.done = false; save(key(S.po.po), pr);
   }
-  function showLast(k) {
+  function showLast(k, again) {
     const it = S.po.map.get(k), n = prog(S.po.po).counts[k] || 0, box = g('fzLast');
     const known = !!it, need = known ? it[2] : 0;
     const st = !known ? 'bad' : state(it, n);
     const msg = !known ? 'MÃ NGOÀI PO — không có trong đơn này'
-      : n === need ? 'ĐỦ SỐ LƯỢNG: ' + n + '/' + need + ' ✓'
-      : n > need ? 'THỪA ' + (n - need) + ' (đã quét ' + n + ', cần ' + need + ')'
-      : 'Còn thiếu ' + (need - n) + ' (đã quét ' + n + ', cần ' + need + ')';
+      : n === need ? 'XÁC NHẬN SỐ LƯỢNG: ' + need + ' ✓'
+      : 'ĐÃ GHI NHẬN ' + n + ' (PO ' + need + ')';
     box.className = 'fz-last ' + st; box.hidden = false;
-    box.innerHTML = '<div class="nm">' + esc(known ? it[1] : 'Mã ' + k) + '</div><div class="code">' + esc(known ? it[0] : k) + '</div>' +
-      '<div class="big"><b>' + n + '</b><span>/ ' + need + '</span></div><div class="msg">' + esc(msg) + '</div>' +
-      '<div class="adj"><button type="button" class="ghost" data-d="-1">−1</button><button type="button" class="ghost" data-d="set">Nhập số</button><button type="button" class="ghost" data-d="1">+1</button></div>';
+    box.innerHTML = '<div class="nm">' + esc(known ? it[1] : 'Mã ' + k) + '</div><div class="code">' + esc(known ? it[0] : k) + (again ? ' · mã này đã quét rồi' : '') + '</div>' +
+      '<div class="big"><span>SL PO</span><b>' + need + '</b></div><div class="msg">' + esc(msg) + '</div>' +
+      '<div class="adj"><button type="button" class="ghost" data-d="set">Số lượng khác</button><button type="button" class="ghost" data-d="del">Bỏ quét mã này</button></div>';
     S.last = k;
   }
 
@@ -122,12 +122,12 @@ const FZ = (() => {
   }
   function finish() {
     const p = S.po, c = prog(p.po).counts, lack = [], over = [];
-    p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n < it[2]) lack.push(it[1] + ' — thiếu ' + (it[2] - n) + ' (' + n + '/' + it[2] + ')'); else if (n > it[2]) over.push(it[1] + ' — thừa ' + (n - it[2])); });
+    p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n === 0) lack.push(it[1] + ' — chưa quét (PO ' + it[2] + ')'); else if (n < it[2]) lack.push(it[1] + ' — ghi nhận ' + n + ', PO ' + it[2]); else if (n > it[2]) over.push(it[1] + ' — thừa ' + (n - it[2])); });
     Object.keys(c).filter(k => !p.map.has(k)).forEach(k => over.push('Mã ngoài PO ' + k + ' — ' + c[k]));
     const list = a => a.map(x => '<div>' + esc(x) + '</div>').join('');
     const ok = !lack.length && !over.length;
     dialog('<h3 style="margin:0">' + (ok ? 'Đủ hàng ✓' : 'Có chênh lệch') + '</h3><div>' + esc(p.store) + ' · ' + esc(p.po) + '</div>' +
-      (lack.length ? '<b style="color:#C62828">Thiếu (' + lack.length + ')</b><div class="fz-dlist">' + list(lack) + '</div>' : '') +
+      (lack.length ? '<b style="color:#C62828">Chưa quét / thiếu (' + lack.length + ')</b><div class="fz-dlist">' + list(lack) + '</div>' : '') +
       (over.length ? '<b style="color:#B45309">Thừa (' + over.length + ')</b><div class="fz-dlist">' + list(over) + '</div>' : ''),
       [['Kiểm tiếp', 'ghost'], ['Xác nhận xong', '', () => { const pr = prog(p.po); pr.done = true; save(key(p.po), pr); showList(); }]]);
   }
@@ -148,16 +148,15 @@ const FZ = (() => {
       if (b.dataset.d === 'set') {
         const v = prompt('Số lượng thực tế của mã này:', cur); if (v === null) return;
         const n = parseInt(v, 10); if (isNaN(n) || n < 0) return; setCount(k, n);
-      } else setCount(k, cur + parseInt(b.dataset.d, 10));
+      } else setCount(k, 0);
       showLast(k); render(); focusScan();
     };
     g('fzScan').onkeydown = e => {
       if (e.key !== 'Enter') return;
       const raw = e.target.value.trim(); e.target.value = ''; if (!raw) return;
-      const k = norm(raw), it = S.po.map.get(k);
-      setCount(k, (prog(S.po.po).counts[k] || 0) + 1);
-      const n = prog(S.po.po).counts[k];
-      beep(!!it && n <= it[2]); showLast(k); render();
+      const k = norm(raw), it = S.po.map.get(k), again = (prog(S.po.po).counts[k] || 0) > 0;
+      if (!again) setCount(k, it ? it[2] : 1);
+      beep(!!it); showLast(k, again); render();
     };
     const kbd = () => { S.kbd = !S.kbd; ['fzScan', 'fzQ'].forEach(id => g(id).inputMode = S.kbd ? 'text' : 'none'); const i = S.po ? g('fzScan') : g('fzQ'); i.blur(); i.focus(); };
     g('fzKbd').onclick = kbd; g('fzKbd2').onclick = kbd;
