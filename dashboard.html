@@ -7,85 +7,64 @@
 <title>SAMSUNG SDS · WH Dashboard</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
 <style>
-  /* Trang gộp: một thanh tab trên cùng + khung hiển thị bảng đang chọn. Mỗi bảng vẫn là trang riêng (tv.html, productivity.html, sorting.html). */
-  :root{--blue:#1428A0;--bar:#1F5FD8;--line:#D1D5DB;--ink:#111827;--muted:#4B5563}
+  /* Trang chọn bảng (landing): bấm vào thẻ nào thì mở thẳng trang đó. Mỗi bảng vẫn là trang riêng (tv.html, sorting.html, productivity.html). */
+  :root{--blue:#1428A0;--bar:#1F5FD8;--navy:#0b1f6b;--line:#D1D5DB;--ink:#111827;--muted:#4B5563}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:#fff;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:var(--ink)}
-  .app{height:100%;display:flex;flex-direction:column}
-  .tabs{flex:0 0 44px;display:flex;align-items:stretch;gap:2px;padding:0 10px;background:#0b1f6b;overflow-x:auto;white-space:nowrap}
-  .brand{display:flex;align-items:center;padding-right:14px;color:#fff;font-weight:900;letter-spacing:.02em;font-size:15px}
-  .tab{font:inherit;font-weight:700;font-size:14px;color:#c7d2fe;background:transparent;border:0;border-bottom:3px solid transparent;padding:0 16px;cursor:pointer}
-  .tab[hidden]{display:none}
-  .tab:hover{color:#fff;background:rgba(255,255,255,.08)}
-  .tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff;background:var(--bar)}
-  .tab:focus-visible{outline:2px solid #fff;outline-offset:-3px}
-  .tab small{font-weight:600;opacity:.8;margin-left:6px}
-  #view{flex:1;min-height:0}
-  #view iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+  html,body{margin:0;min-height:100%;background:#F3F5FA;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:var(--ink)}
+  .head{display:flex;height:56px;border-bottom:2px solid var(--navy);background:#fff}
+  .logo{flex:0 0 auto;display:flex;align-items:center;padding:0 20px;color:var(--blue);font-size:22px;font-weight:900;letter-spacing:.02em}
+  .title{flex:1;display:flex;align-items:center;padding:0 20px;background:var(--bar);color:#fff;font-size:20px;font-weight:800;letter-spacing:.02em}
+  main{max-width:920px;margin:0 auto;padding:40px 16px 24px}
+  h1{margin:0 0 6px;font-size:26px;color:var(--blue)}
+  .sub{margin:0 0 28px;color:var(--muted);font-size:15px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+  .card{display:flex;flex-direction:column;gap:8px;padding:26px 24px;background:#fff;border:1px solid var(--line);border-top:6px solid var(--bar);border-radius:10px;
+    color:inherit;text-decoration:none;box-shadow:0 1px 3px rgba(17,24,39,.08);transition:transform .12s,box-shadow .12s}
+  a.card:hover,a.card:focus-visible{transform:translateY(-3px);box-shadow:0 8px 20px rgba(20,40,160,.18);outline:none}
+  .card .k{color:var(--blue);font-size:13px;font-weight:800;letter-spacing:.06em}
+  .card .n{font-size:30px;font-weight:900}
+  .card .d{color:var(--muted);font-size:15px;line-height:1.45}
+  .card .go{margin-top:10px;color:var(--bar);font-weight:800;font-size:15px}
+  .card.off{border-top-color:#9CA3AF;opacity:.6}
+  .card.off .go{color:var(--muted)}
+  .foot{max-width:920px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="tabs" role="tablist" aria-label="Dashboard">
-    <div class="brand">SAMSUNG SDS</div>
-    <button class="tab" role="tab" data-tab="mover" type="button">MOVER<small>Progress</small></button>
-    <button class="tab" role="tab" data-tab="moverprod" type="button" hidden>MOVER<small>Productivity</small></button>
-    <button class="tab" role="tab" data-tab="sorting" type="button">SORTING<small>Productivity</small></button>
-  </div>
-  <div id="view"></div>
-</div>
+<div class="head"><div class="logo">SAMSUNG SDS</div><div class="title">WH Dashboard</div></div>
+<main>
+  <h1>Chọn bảng cần xem</h1>
+  <p class="sub">Bấm vào một thẻ để mở bảng đó. Muốn quay lại đây thì bấm nút Back của trình duyệt.</p>
+  <div class="cards" id="cards"></div>
+</main>
+<div class="foot">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</div>
 <script>
 'use strict';
-// Một link cho cả ba bảng:
-//   dashboard.html#key=<key Sorting>&mkey=<key Mover>[&tab=mover|sorting][&lang=vi|en|ko][&all=1]
-// - key  : DASH_KEY của proxy Sorting (dùng cho tab SORTING)
-// - mkey : DASH_KEY của proxy Mover (dùng cho hai tab MOVER). Bỏ trống thì dùng key chung.
-// - all=1: hiện thêm tab MOVER Productivity (có tên và thời gian từng người, mặc định ẩn khỏi link chiếu TV).
-// - tab  : bảng mở sẵn. Bỏ trống thì mở lại bảng lần trước (nhớ trên máy này).
+// Link chung:  dashboard.html#key=<key Sorting>&mkey=<key Mover>[&lang=vi|en|ko][&all=1]
+// - key  : DASH_KEY của proxy Sorting (mở bảng SORTING)
+// - mkey : DASH_KEY của proxy Mover (mở bảng MOVER). Bỏ trống thì dùng key chung.
 // - lang : ngôn ngữ của bảng Sorting.
+// - all=1: hiện thêm thẻ MOVER Productivity (có tên và thời gian từng người, mặc định ẩn).
 // Key nằm sau dấu # nên không gửi lên server khi tải trang. Chỉ chia sẻ link này cho người được phép xem.
-const TABS = {
-  mover:     p => 'tv.html' + p.mover,
-  moverprod: p => 'productivity.html' + p.mover,
-  sorting:   p => 'sorting.html' + p.sorting,
-};
-const $ = s => document.querySelector(s);
+const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+const key = h.get('key') || '', mkey = h.get('mkey') || key, lang = h.get('lang') || '';
+const enc = encodeURIComponent;
 
-const hash = () => new URLSearchParams(location.hash.replace(/^#/, ''));
-function parts() {
-  const h = hash(), key = h.get('key') || '', mkey = h.get('mkey') || key, lang = h.get('lang') || '';
-  const enc = encodeURIComponent;
-  return {
-    mover: mkey ? '#key=' + enc(mkey) : '',
-    sorting: (lang ? '?lang=' + enc(lang) : '') + (key ? '#key=' + enc(key) : ''),
-  };
-}
-const allTabs = () => hash().get('all') === '1' || hash().get('tab') === 'moverprod';
-const okTab = t => TABS[t] && (t !== 'moverprod' || allTabs());
-function current() {
-  const t = hash().get('tab');
-  if (okTab(t)) return t;
-  try { const s = localStorage.getItem('dashTab'); if (okTab(s)) return s; } catch (e) { /* bị chặn thì dùng mặc định */ }
-  return 'mover';
-}
+const ITEMS = [
+  { k: 'MOVER', n: 'Progress', d: 'Tiến độ điều hàng hôm nay: Actual / Plan, hàng chờ còn lại, sản lượng từng nhân viên.',
+    href: mkey ? 'tv.html#key=' + enc(mkey) : '', need: 'mkey' },
+  { k: 'SORTING', n: 'Productivity', d: 'Năng suất sorting theo nhân viên, theo giờ và theo Zone / Line. Chọn ngày, tải Excel.',
+    href: key ? 'sorting.html' + (lang ? '?lang=' + enc(lang) : '') + '#key=' + enc(key) : '', need: 'key' },
+];
+if (h.get('all') === '1') ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
+  href: mkey ? 'productivity.html#key=' + enc(mkey) : '', need: 'mkey' });
 
-function show(tab, remember) {
-  document.querySelector('[data-tab="moverprod"]').hidden = !allTabs();
-  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  const f = document.createElement('iframe');             // tạo khung mới mỗi lần để chắc chắn tải lại trang và key mới
-  f.title = tab;
-  f.src = TABS[tab](parts());
-  $('#view').replaceChildren(f);
-  if (remember) {
-    try { localStorage.setItem('dashTab', tab); } catch (e) { /* không lưu được thì thôi */ }
-    const h = hash(); h.set('tab', tab);
-    history.replaceState(null, '', '#' + h.toString());     // link trên thanh địa chỉ luôn mở đúng bảng đang xem
-  }
-}
-
-document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => show(b.dataset.tab, true)));
-window.addEventListener('hashchange', () => show(current(), false));   // đổi key/tab trên thanh địa chỉ thì tải lại
-show(current(), false);
+document.getElementById('cards').innerHTML = ITEMS.map(i => {
+  const body = `<div class="k">${i.k}</div><div class="n">${i.n}</div><div class="d">${i.d}</div>`;
+  return i.href
+    ? `<a class="card" href="${i.href}">${body}<div class="go">Mở bảng →</div></a>`
+    : `<div class="card off">${body}<div class="go">Thiếu khoá: thêm #${i.need}=... vào link</div></div>`;
+}).join('');
 </script>
 </body>
 </html>
