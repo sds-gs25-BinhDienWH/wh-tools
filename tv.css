@@ -75,3 +75,4 @@ html,body{margin:0;height:100%;overflow:hidden;background:#fff;color:var(--ink);
 .foot .r{margin-left:auto}
 .dot{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:#16a34a}
 .dot.err{background:#dc2626}
+.logo{text-decoration:none;cursor:pointer}

@@ -6,12 +6,12 @@
 <meta name="robots" content="noindex">
 <title>Sorting Productivity</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
-<link rel="stylesheet" href="sorting.css?v=2">
+<link rel="stylesheet" href="sorting.css?v=3">
 </head>
 <body>
 <div class="board">
   <div class="head">
-    <div class="logo">SAMSUNG SDS</div>
+    <a class="logo" id="home" href="dashboard.html" title="Trang chủ">SAMSUNG SDS</a>
     <div class="title" data-i18n="title"></div>
   </div>
 
@@ -58,5 +58,10 @@
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="sorting.js?v=2"></script>
+<script>
+// Bấm chữ SAMSUNG SDS để về trang chủ (dashboard.html); mang theo key của bảng này để trang chủ mở lại được.
+(function(){var h=new URLSearchParams(location.hash.replace(/^#/,'')),k=h.get('key')||new URLSearchParams(location.search).get('key')||'';
+document.getElementById('home').href='dashboard.html'+(k?'#key='+encodeURIComponent(k):'');})();
+</script>
 </body>
 </html>

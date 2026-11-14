@@ -71,3 +71,4 @@ html,body{margin:0;background:#fff;color:var(--ink);font-family:"Segoe UI",Arial
   .title{font-size:14px}
   .s .v{font-size:22px}
 }
+.logo{text-decoration:none;cursor:pointer}

@@ -47,7 +47,12 @@
 // - all=1: hiện thêm thẻ MOVER Productivity (có tên và thời gian từng người, mặc định ẩn).
 // Key nằm sau dấu # nên không gửi lên server khi tải trang. Chỉ chia sẻ link này cho người được phép xem.
 const h = new URLSearchParams(location.hash.replace(/^#/, ''));
-const key = h.get('key') || '', mkey = h.get('mkey') || key, lang = h.get('lang') || '';
+// Nhớ key trong tab này (sessionStorage): từ bảng bấm chữ SAMSUNG SDS về trang chủ thì không mất key của bảng kia.
+let saved = {};
+try { saved = JSON.parse(sessionStorage.getItem('dashKeys') || '{}'); } catch (e) { /* bị chặn thì bỏ qua */ }
+const key = h.get('key') || saved.key || '', mkey = h.get('mkey') || saved.mkey || key, lang = h.get('lang') || saved.lang || '';
+const all = h.get('all') === '1' || !!saved.all;
+try { sessionStorage.setItem('dashKeys', JSON.stringify({ key: h.get('key') || saved.key || '', mkey: h.get('mkey') || saved.mkey || '', lang, all })); } catch (e) { /* không lưu được thì thôi */ }
 const enc = encodeURIComponent;
 
 const ITEMS = [
@@ -56,7 +61,7 @@ const ITEMS = [
   { k: 'SORTING', n: 'Productivity', d: 'Năng suất sorting theo nhân viên, theo giờ và theo Zone / Line. Chọn ngày, tải Excel.',
     href: key ? 'sorting.html' + (lang ? '?lang=' + enc(lang) : '') + '#key=' + enc(key) : '', need: 'key' },
 ];
-if (h.get('all') === '1') ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
+if (all) ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
   href: mkey ? 'productivity.html#key=' + enc(mkey) : '', need: 'mkey' });
 
 document.getElementById('cards').innerHTML = ITEMS.map(i => {

@@ -6,12 +6,12 @@
 <meta name="robots" content="noindex">
 <title>SAMSUNG SDS · WH Productivity Board</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
-<link rel="stylesheet" href="productivity.css?v=4">
+<link rel="stylesheet" href="productivity.css?v=5">
 </head>
 <body>
 <div class="board">
   <div class="head">
-    <div class="logo">SAMSUNG SDS</div>
+    <a class="logo" id="home" href="dashboard.html" title="Trang chủ">SAMSUNG SDS</a>
     <div class="title">WH PRODUCTIVITY BOARD</div>
   </div>
 
@@ -37,5 +37,10 @@
   <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
 </div>
 <script src="productivity.js?v=3"></script>
+<script>
+// Bấm chữ SAMSUNG SDS để về trang chủ (dashboard.html); mang theo key của bảng này để trang chủ mở lại được.
+(function(){var h=new URLSearchParams(location.hash.replace(/^#/,'')),k=h.get('key')||new URLSearchParams(location.search).get('key')||'';
+document.getElementById('home').href='dashboard.html'+(k?'#mkey='+encodeURIComponent(k):'');})();
+</script>
 </body>
 </html>
