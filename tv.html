@@ -33,10 +33,5 @@
   <div class="foot"><span class="dot" id="dot"></span><span id="status">Đang tải…</span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
 </div>
 <script src="tv.js?v=10"></script>
-<script>
-// Bấm chữ SAMSUNG SDS để về trang chủ (dashboard.html); mang theo key của bảng này để trang chủ mở lại được.
-(function(){var h=new URLSearchParams(location.hash.replace(/^#/,'')),k=h.get('key')||new URLSearchParams(location.search).get('key')||'';
-document.getElementById('home').href='dashboard.html'+(k?'#mkey='+encodeURIComponent(k):'');})();
-</script>
 </body>
 </html>

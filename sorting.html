@@ -58,10 +58,5 @@
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="sorting.js?v=2"></script>
-<script>
-// Bấm chữ SAMSUNG SDS để về trang chủ (dashboard.html); mang theo key của bảng này để trang chủ mở lại được.
-(function(){var h=new URLSearchParams(location.hash.replace(/^#/,'')),k=h.get('key')||new URLSearchParams(location.search).get('key')||'';
-document.getElementById('home').href='dashboard.html'+(k?'#key='+encodeURIComponent(k):'');})();
-</script>
 </body>
 </html>

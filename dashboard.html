@@ -7,7 +7,7 @@
 <title>SAMSUNG SDS · WH Dashboard</title>
 <link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
 <style>
-  /* Trang chọn bảng (landing): bấm vào thẻ nào thì mở thẳng trang đó. Mỗi bảng vẫn là trang riêng (tv.html, sorting.html, productivity.html). */
+  /* Trang chủ: bấm vào thẻ nào thì mở thẳng trang đó. Mỗi bảng vẫn là trang riêng (tv.html, sorting.html, productivity.html). */
   :root{--blue:#1428A0;--bar:#1F5FD8;--navy:#0b1f6b;--line:#D1D5DB;--ink:#111827;--muted:#4B5563}
   *{box-sizing:border-box}
   html,body{margin:0;min-height:100%;background:#F3F5FA;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:var(--ink)}
@@ -19,57 +19,87 @@
   .sub{margin:0 0 28px;color:var(--muted);font-size:15px}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
   .card{display:flex;flex-direction:column;gap:8px;padding:26px 24px;background:#fff;border:1px solid var(--line);border-top:6px solid var(--bar);border-radius:10px;
-    color:inherit;text-decoration:none;box-shadow:0 1px 3px rgba(17,24,39,.08);transition:transform .12s,box-shadow .12s}
-  a.card:hover,a.card:focus-visible{transform:translateY(-3px);box-shadow:0 8px 20px rgba(20,40,160,.18);outline:none}
+    color:inherit;font:inherit;text-align:left;cursor:pointer;box-shadow:0 1px 3px rgba(17,24,39,.08);transition:transform .12s,box-shadow .12s}
+  .card:hover,.card:focus-visible{transform:translateY(-3px);box-shadow:0 8px 20px rgba(20,40,160,.18);outline:none}
   .card .k{color:var(--blue);font-size:13px;font-weight:800;letter-spacing:.06em}
   .card .n{font-size:30px;font-weight:900}
   .card .d{color:var(--muted);font-size:15px;line-height:1.45}
   .card .go{margin-top:10px;color:var(--bar);font-weight:800;font-size:15px}
-  .card.off{border-top-color:#9CA3AF;opacity:.6}
-  .card.off .go{color:var(--muted)}
+  .reset{margin:18px 0 0;color:var(--muted);font-size:13px}
+  .reset a{color:var(--bar);cursor:pointer;text-decoration:underline}
   .foot{max-width:920px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:12px}
+  .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(11,31,107,.45);padding:16px}
+  .modal[hidden]{display:none}
+  .box{width:min(420px,100%);background:#fff;border-radius:10px;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .box h2{margin:0 0 6px;font-size:19px;color:var(--blue)}
+  .box p{margin:0 0 12px;color:var(--muted);font-size:14px}
+  .box input{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:6px}
+  .box .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .box button{font:inherit;font-weight:700;padding:8px 16px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  .box button.primary{background:var(--bar);border-color:var(--bar);color:#fff}
 </style>
 </head>
 <body>
 <div class="head"><div class="logo">SAMSUNG SDS</div><div class="title">WH Dashboard</div></div>
 <main>
   <h1>Chọn bảng cần xem</h1>
-  <p class="sub">Bấm vào một thẻ để mở bảng đó. Muốn quay lại đây thì bấm nút Back của trình duyệt.</p>
+  <p class="sub">Bấm vào một thẻ để mở bảng đó. Muốn quay lại đây thì bấm chữ SAMSUNG SDS ở góc trên trái của bảng.</p>
   <div class="cards" id="cards"></div>
+  <p class="reset">Mã xem bảng được nhớ trên máy này. <a id="forget">Xoá mã đã lưu</a></p>
 </main>
 <div class="foot">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</div>
+
+<div class="modal" id="modal" hidden>
+  <form class="box" id="form">
+    <h2 id="mt"></h2>
+    <p>Nhập mã xem bảng một lần, máy này sẽ nhớ cho các lần sau.</p>
+    <input id="code" type="password" autocomplete="off" placeholder="Mã xem bảng">
+    <div class="btns"><button type="button" id="no">Huỷ</button><button type="submit" class="primary">Mở bảng</button></div>
+  </form>
+</div>
+
 <script>
 'use strict';
-// Link chung:  dashboard.html#key=<key Sorting>&mkey=<key Mover>[&lang=vi|en|ko][&all=1]
-// - key  : DASH_KEY của proxy Sorting (mở bảng SORTING)
-// - mkey : DASH_KEY của proxy Mover (mở bảng MOVER). Bỏ trống thì dùng key chung.
-// - lang : ngôn ngữ của bảng Sorting.
-// - all=1: hiện thêm thẻ MOVER Productivity (có tên và thời gian từng người, mặc định ẩn).
-// Key nằm sau dấu # nên không gửi lên server khi tải trang. Chỉ chia sẻ link này cho người được phép xem.
+// Trang chủ KHÔNG chứa key trong địa chỉ. Bấm vào bảng nào lần đầu thì hỏi mã xem bảng đó, rồi nhớ trên máy này (localStorage).
+// Có thể nhập sẵn bằng link:  dashboard.html#key=<key Sorting>&mkey=<key Mover>  (key được cất đi rồi xoá khỏi thanh địa chỉ).
+// Thêm &all=1 để hiện thẻ MOVER Productivity (có tên và thời gian từng người, mặc định ẩn); &lang=vi|en|ko cho bảng Sorting.
+const $ = id => document.getElementById(id), enc = encodeURIComponent;
+const get = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const put = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { /* trình duyệt chặn lưu thì hỏi lại mỗi lần */ } };
+
 const h = new URLSearchParams(location.hash.replace(/^#/, ''));
-// Nhớ key trong tab này (sessionStorage): từ bảng bấm chữ SAMSUNG SDS về trang chủ thì không mất key của bảng kia.
-let saved = {};
-try { saved = JSON.parse(sessionStorage.getItem('dashKeys') || '{}'); } catch (e) { /* bị chặn thì bỏ qua */ }
-const key = h.get('key') || saved.key || '', mkey = h.get('mkey') || saved.mkey || key, lang = h.get('lang') || saved.lang || '';
-const all = h.get('all') === '1' || !!saved.all;
-try { sessionStorage.setItem('dashKeys', JSON.stringify({ key: h.get('key') || saved.key || '', mkey: h.get('mkey') || saved.mkey || '', lang, all })); } catch (e) { /* không lưu được thì thôi */ }
-const enc = encodeURIComponent;
+if (h.get('key')) put('dk_sorting', h.get('key'));
+if (h.get('mkey')) put('dk_mover', h.get('mkey'));
+if (h.get('all') === '1') put('dk_all', '1');
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);   // xoá key khỏi thanh địa chỉ
+const lang = h.get('lang') || new URLSearchParams(location.search).get('lang') || '';
 
 const ITEMS = [
   { k: 'MOVER', n: 'Progress', d: 'Tiến độ điều hàng hôm nay: Actual / Plan, hàng chờ còn lại, sản lượng từng nhân viên.',
-    href: mkey ? 'tv.html#key=' + enc(mkey) : '', need: 'mkey' },
+    store: 'dk_mover', url: key => 'tv.html#key=' + enc(key) },
   { k: 'SORTING', n: 'Productivity', d: 'Năng suất sorting theo nhân viên, theo giờ và theo Zone / Line. Chọn ngày, tải Excel.',
-    href: key ? 'sorting.html' + (lang ? '?lang=' + enc(lang) : '') + '#key=' + enc(key) : '', need: 'key' },
+    store: 'dk_sorting', url: key => 'sorting.html' + (lang ? '?lang=' + enc(lang) : '') + '#key=' + enc(key) },
 ];
-if (all) ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
-  href: mkey ? 'productivity.html#key=' + enc(mkey) : '', need: 'mkey' });
+if (get('dk_all') === '1') ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
+  store: 'dk_mover', url: key => 'productivity.html#key=' + enc(key) });
 
-document.getElementById('cards').innerHTML = ITEMS.map(i => {
-  const body = `<div class="k">${i.k}</div><div class="n">${i.n}</div><div class="d">${i.d}</div>`;
-  return i.href
-    ? `<a class="card" href="${i.href}">${body}<div class="go">Mở bảng →</div></a>`
-    : `<div class="card off">${body}<div class="go">Thiếu khoá: thêm #${i.need}=... vào link</div></div>`;
-}).join('');
+$('cards').innerHTML = ITEMS.map((i, n) =>
+  `<button class="card" type="button" data-n="${n}"><div class="k">${i.k}</div><div class="n">${i.n}</div><div class="d">${i.d}</div><div class="go">Mở bảng →</div></button>`).join('');
+
+let pending = null;
+$('cards').addEventListener('click', e => {
+  const b = e.target.closest('.card'); if (!b) return;
+  const i = ITEMS[Number(b.dataset.n)], key = get(i.store);
+  if (key) { location.href = i.url(key); return; }
+  pending = i; $('mt').textContent = i.k + ' ' + i.n; $('code').value = ''; $('modal').hidden = false; $('code').focus();
+});
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('code').value.trim(); if (!v || !pending) return;
+  put(pending.store, v); location.href = pending.url(v);
+});
+$('no').addEventListener('click', () => { $('modal').hidden = true; pending = null; });
+$('forget').addEventListener('click', () => { ['dk_sorting', 'dk_mover', 'dk_all'].forEach(k => put(k, '')); alert('Đã xoá mã đã lưu trên máy này.'); location.reload(); });
 </script>
 </body>
 </html>
