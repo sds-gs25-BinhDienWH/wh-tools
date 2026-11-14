@@ -9,7 +9,7 @@ const FZ = (() => {
   const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-  const S = { data: null, loading: false, po: null, filter: 'todo', last: null, kbd: false, bound: false };
+  const S = { data: null, loading: false, po: null, filter: 'todo', last: null, pending: null, kbd: false, bound: false };
   // Tiến độ lưu theo PO trên máy: {counts:{mã:số đã quét}, done:bool}. Mã ngoài PO cũng được đếm (coi là thừa).
   const key = po => 'frozen:' + S.data.date + ':' + po;
   const prog = po => load(key(po), { counts: {}, done: false });
@@ -53,7 +53,7 @@ const FZ = (() => {
 
   // ---------- Danh sách PO ----------
   function showList() {
-    S.po = null; g('fzList').hidden = false; g('fzCheck').hidden = true;
+    S.po = null; S.pending = null; g('fzList').hidden = false; g('fzCheck').hidden = true;
     renderList(); focusQ();
   }
   // Khớp theo số cửa hàng (bỏ chữ VN): đầu số trước (005 -> 0052, 0053), rồi tới chứa số, rồi tới tên
@@ -86,7 +86,7 @@ const FZ = (() => {
 
   // ---------- Kiểm một PO ----------
   function openPO(po) {
-    S.po = S.data.pos.find(p => p.po === po); S.last = null;
+    S.po = S.data.pos.find(p => p.po === po); S.last = null; S.pending = null;
     g('fzList').hidden = true; g('fzCheck').hidden = false; g('fzLast').hidden = true;
     g('fzTitle').innerHTML = 'VN' + esc(S.po.num) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
     render(); focusScan();
@@ -109,17 +109,23 @@ const FZ = (() => {
     if (n) pr.counts[k] = n; else delete pr.counts[k];
     pr.done = false; save(key(S.po.po), pr);
   }
-  function showLast(k, again) {
+  // Quét một mã -> hiện số lượng PO + chờ xác nhận. Chưa xác nhận (hoặc nhập số khác) thì chưa được quét mã khác.
+  function showLast(k, again, warn) {
     const it = S.po.map.get(k), n = prog(S.po.po).counts[k] || 0, box = g('fzLast');
-    const known = !!it, need = known ? it[2] : 0;
-    const st = !known ? 'bad' : state(it, n);
-    const msg = !known ? 'MÃ NGOÀI PO — không có trong đơn này'
-      : n === need ? 'XÁC NHẬN SỐ LƯỢNG: ' + need + ' ✓'
+    const known = !!it, need = known ? it[2] : 0, pend = S.pending === k;
+    const st = pend ? 'ask' : !known ? 'bad' : state(it, n);
+    const msg = pend ? (known ? 'Xác nhận số lượng: ' + need + '?' : 'MÃ NGOÀI PO — không có trong đơn này')
+      : !known ? 'MÃ NGOÀI PO — đã ghi nhận ' + n
+      : n === need ? 'ĐÃ XÁC NHẬN SỐ LƯỢNG: ' + need + ' ✓'
       : 'ĐÃ GHI NHẬN ' + n + ' (PO ' + need + ')';
+    const btns = pend
+      ? (known ? '<button type="button" class="fz-ok" data-d="ok">XÁC NHẬN ' + need + '</button><button type="button" class="ghost" data-d="set">Số lượng khác</button>'
+               : '<button type="button" class="ghost" data-d="set">Nhập số lượng</button><button type="button" class="ghost" data-d="skip">Bỏ qua</button>')
+      : '<button type="button" class="ghost" data-d="set">Số lượng khác</button><button type="button" class="ghost" data-d="del">Bỏ quét mã này</button>';
     box.className = 'fz-last ' + st; box.hidden = false;
-    box.innerHTML = '<div class="nm">' + esc(known ? it[1] : 'Mã ' + k) + '</div><div class="code">' + esc(known ? it[0] : k) + (again ? ' · mã này đã quét rồi' : '') + '</div>' +
-      '<div class="big"><span>SL PO</span><b>' + need + '</b></div><div class="msg">' + esc(msg) + '</div>' +
-      '<div class="adj"><button type="button" class="ghost" data-d="set">Số lượng khác</button><button type="button" class="ghost" data-d="del">Bỏ quét mã này</button></div>';
+    box.innerHTML = (warn ? '<div class="warn">⚠ Xác nhận mã này xong mới quét được mã khác</div>' : '') +
+      '<div class="nm">' + esc(known ? it[1] : 'Mã ' + k) + '</div><div class="code">' + esc(known ? it[0] : k) + (again ? ' · mã này đã xác nhận rồi' : '') + '</div>' +
+      '<div class="big"><span>SL PO</span><b>' + need + '</b></div><div class="msg">' + esc(msg) + '</div><div class="adj">' + btns + '</div>';
     S.last = k;
   }
 
@@ -154,19 +160,27 @@ const FZ = (() => {
     };
     g('fzBack').onclick = showList;
     g('fzLast').onclick = e => {
-      const b = e.target.closest('button'); if (!b || !S.last) return; const k = S.last, cur = prog(S.po.po).counts[k] || 0;
-      if (b.dataset.d === 'set') {
-        const v = prompt('Số lượng thực tế của mã này:', cur); if (v === null) return;
-        const n = parseInt(v, 10); if (isNaN(n) || n < 0) return; setCount(k, n);
-      } else setCount(k, 0);
-      showLast(k); render(); focusScan();
+      const b = e.target.closest('button'); if (!b || !S.last) return; confirmAct(b.dataset.d);
     };
+    function confirmAct(d) {
+      const k = S.last, it = S.po.map.get(k), cur = prog(S.po.po).counts[k] || 0;
+      if (d === 'ok') { if (!it) return; setCount(k, it[2]); S.pending = null; }
+      else if (d === 'set') {
+        const v = prompt('Số lượng thực tế của mã này:', cur || (it ? it[2] : '')); if (v === null) return;
+        const n = parseInt(v, 10); if (isNaN(n) || n < 1) return; setCount(k, n); S.pending = null;
+      } else if (d === 'del') { setCount(k, 0); S.pending = null; g('fzLast').hidden = true; render(); focusScan(); return; }
+      else if (d === 'skip') { S.pending = null; g('fzLast').hidden = true; render(); focusScan(); return; }
+      beep(true); showLast(k); render(); focusScan();
+    }
     g('fzScan').onkeydown = e => {
       if (e.key !== 'Enter') return;
-      const raw = e.target.value.trim(); e.target.value = ''; if (!raw) return;
+      const raw = e.target.value.trim(); e.target.value = '';
+      if (!raw) { if (S.pending && S.po.map.has(S.pending)) confirmAct('ok'); return; } // Enter trống = xác nhận mã đang mở
       if (prog(S.po.po).done) { beep(false); return; } // đã kết thúc: phải bấm Mở lại mới quét tiếp
-      const k = norm(raw), it = S.po.map.get(k), again = (prog(S.po.po).counts[k] || 0) > 0;
-      if (!again) setCount(k, it ? it[2] : 1);
+      const k = norm(raw);
+      if (S.pending) { beep(false); showLast(S.pending, false, true); return; } // chưa xác nhận mã trước
+      const it = S.po.map.get(k), again = (prog(S.po.po).counts[k] || 0) > 0;
+      if (!again) S.pending = k;
       beep(!!it); showLast(k, again); render();
     };
     const kbd = () => { S.kbd = !S.kbd; ['fzScan', 'fzQ'].forEach(id => g(id).inputMode = S.kbd ? 'text' : 'none'); const i = S.po ? g('fzScan') : g('fzQ'); i.blur(); i.focus(); };
@@ -178,7 +192,7 @@ const FZ = (() => {
     g('fzFinish').onclick = finish;
     g('fzReopen').onclick = () => { const pr = prog(S.po.po); pr.done = false; save(key(S.po.po), pr); render(); focusScan(); };
     g('fzReset').onclick = () => dialog('<b>Xoá toàn bộ kết quả đã quét của PO này và kiểm lại từ đầu?</b>',
-      [['Không', 'ghost'], ['Xoá hết', '', () => { save(key(S.po.po), { counts: {}, done: false }); S.last = null; g('fzLast').hidden = true; render(); focusScan(); }]]);
+      [['Không', 'ghost'], ['Xoá hết', '', () => { save(key(S.po.po), { counts: {}, done: false }); S.last = null; S.pending = null; g('fzLast').hidden = true; render(); focusScan(); }]]);
   }
 
   return { show };
