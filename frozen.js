@@ -47,7 +47,7 @@ const FZ = (() => {
     const c = prog(p.po).counts, pr = prog(p.po);
     let got = 0, diff = false, any = false;
     for (const k of Object.keys(c)) { any = true; if (!p.map.has(k)) diff = true; }
-    for (const it of p.items) { const n = c[norm(it[0])] || 0; got += Math.min(n, it[2]); if (n !== it[2]) diff = true; }
+    for (const it of p.items) { const n = c[norm(it[0])] || 0; if (n > 0) got++; if (n !== it[2]) diff = true; }
     return { got, any, diff, done: pr.done };
   }
 
@@ -70,8 +70,8 @@ const FZ = (() => {
     g('fzPos').innerHTML = ps.slice(0, 8).map(p => {
       const s = status(p);
       const b = s.done ? (s.diff ? '<span class="fz-badge bad">Lệch</span>' : '<span class="fz-badge ok">Đủ</span>')
-        : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.total + '</span>' : '<span class="fz-badge">' + p.total + ' sp</span>';
-      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + '</small></div>' + b + '</div>';
+        : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.items.length + ' mã</span>' : '<span class="fz-badge">' + p.items.length + ' mã</span>';
+      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
     }).join('') + (ps.length > 8 ? '<p class="fz-meta">Còn ' + (ps.length - 8) + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
       || (g('fzQ').value.trim() ? '<p>Không có cửa hàng nào khớp.</p>' : '');
   }
@@ -92,7 +92,7 @@ const FZ = (() => {
     const p = S.po, c = prog(p.po).counts;
     let codes = 0, got = 0; p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n > 0) codes++; got += Math.min(n, it[2]); });
     const pct = p.items.length ? Math.round(codes * 100 / p.items.length) : 0;
-    g('fzProg').innerHTML = 'Đã quét <b>' + codes + '</b> / ' + p.items.length + ' mã · ' + got + '/' + p.total + ' sp<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
+    g('fzProg').innerHTML = 'Đã kiểm <b>' + codes + '</b> / ' + p.items.length + ' mã<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
   }
 
   function setCount(k, n) {
