@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A1930">
+<title>Kiểm hàng đông · WH Tool</title>
+<link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
+<link rel="stylesheet" href="frozen.css">
+</head>
+<body>
+<header class="top">
+  <button id="back" type="button" hidden>‹ Danh sách</button>
+  <div id="title" class="title">Kiểm hàng đông</div>
+  <button id="reload" type="button" title="Tải lại dữ liệu PO">↻</button>
+</header>
+
+<main id="vList">
+  <input id="q" type="search" placeholder="Quét/nhập mã cửa hàng hoặc mã PO" autocomplete="off" inputmode="search">
+  <div id="meta" class="meta"></div>
+  <div id="poList"></div>
+</main>
+
+<main id="vCheck" hidden>
+  <div class="scanbox">
+    <input id="scan" placeholder="Quét sản phẩm trong rổ" autocomplete="off" inputmode="none" autocapitalize="off">
+    <button id="kbd" type="button" class="ghost" title="Bật/tắt bàn phím">⌨</button>
+  </div>
+  <div id="last" class="last" hidden></div>
+  <div id="prog" class="prog"></div>
+  <div class="tabs">
+    <button type="button" data-f="todo" class="on">Chưa đủ</button>
+    <button type="button" data-f="all">Tất cả</button>
+    <button type="button" data-f="done">Đã đủ</button>
+  </div>
+  <div id="items"></div>
+  <div class="foot">
+    <button id="reset" type="button" class="ghost">Làm lại PO</button>
+    <button id="finish" type="button">Kết thúc kiểm</button>
+  </div>
+</main>
+
+<dialog id="dlg"><div id="dlgBody"></div><div class="dlg-act" id="dlgAct"></div></dialog>
+<script src="frozen.js"></script>
+</body>
+</html>
