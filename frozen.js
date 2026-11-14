@@ -172,16 +172,33 @@ const FZ = (() => {
       else if (d === 'skip') { S.pending = null; g('fzLast').hidden = true; render(); focusScan(); return; }
       beep(true); showLast(k); render(); focusScan();
     }
-    g('fzScan').onkeydown = e => {
-      if (e.key !== 'Enter') return;
-      const raw = e.target.value.trim(); e.target.value = '';
-      if (!raw) { if (S.pending && S.po.map.has(S.pending)) confirmAct('ok'); return; } // Enter trống = xác nhận mã đang mở
+    // Máy quét PDA có thể gửi Enter hoặc không: không có Enter thì tự gửi sau khi mã ngừng chạy vào ô (~150ms).
+    // Bật bàn phím (⌨) thì gõ tay, chỉ nhận khi bấm Enter.
+    let scanTimer = null, lastSubmit = 0;
+    function submitScan(raw) {
+      lastSubmit = Date.now();
       if (prog(S.po.po).done) { beep(false); return; } // đã kết thúc: phải bấm Mở lại mới quét tiếp
       const k = norm(raw);
       if (S.pending) { beep(false); showLast(S.pending, false, true); return; } // chưa xác nhận mã trước
       const it = S.po.map.get(k), again = (prog(S.po.po).counts[k] || 0) > 0;
       if (!again) S.pending = k;
       beep(!!it); showLast(k, again); render();
+    }
+    g('fzScan').oninput = e => {
+      clearTimeout(scanTimer);
+      if (S.kbd) return;
+      scanTimer = setTimeout(() => {
+        const i = g('fzScan'), raw = i.value.trim();
+        if (raw.length >= 6) { i.value = ''; submitScan(raw); }
+      }, 150);
+    };
+    g('fzScan').onkeydown = e => {
+      if (e.key !== 'Enter') return;
+      clearTimeout(scanTimer);
+      const raw = e.target.value.trim(); e.target.value = '';
+      if (raw) { submitScan(raw); return; }
+      // Enter trống = xác nhận mã đang mở (bỏ qua Enter đi kèm ngay sau một lần quét)
+      if (Date.now() - lastSubmit > 600 && S.pending && S.po.map.has(S.pending)) confirmAct('ok');
     };
     const kbd = () => { S.kbd = !S.kbd; ['fzScan', 'fzQ'].forEach(id => g(id).inputMode = S.kbd ? 'text' : 'none'); const i = S.po ? g('fzScan') : g('fzQ'); i.blur(); i.focus(); };
     g('fzKbd').onclick = kbd; g('fzKbd2').onclick = kbd;
