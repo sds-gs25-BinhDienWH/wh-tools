@@ -13,6 +13,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="frozen.css">
 </head>
 <body>
 <div id="netBar" class="net-bar"></div>
@@ -123,6 +124,34 @@
         <div id="dasOut" style="margin-top:12px"></div>
       </section>
 
+      <section id="view-frozen" class="view" hidden>
+        <div id="fzList">
+          <h2>Kiểm hàng</h2>
+          <div class="fz-scan"><input id="fzQ" type="search" placeholder="Quét mã cửa hàng hoặc mã PO" autocomplete="off" inputmode="none"><button id="fzKbd2" type="button" class="ghost" title="Bật/tắt bàn phím">⌨</button></div>
+          <div id="fzMeta" class="fz-meta"></div>
+          <div id="fzPos"></div>
+        </div>
+        <div id="fzCheck" hidden>
+          <div class="fz-head"><button id="fzBack" type="button" class="ghost">‹ Danh sách</button><div id="fzTitle" class="fz-title"></div></div>
+          <div class="fz-scan">
+            <input id="fzScan" placeholder="Quét sản phẩm trong rổ" autocomplete="off" inputmode="none" autocapitalize="off">
+            <button id="fzKbd" type="button" class="ghost" title="Bật/tắt bàn phím">⌨</button>
+          </div>
+          <div id="fzLast" class="fz-last" hidden></div>
+          <div id="fzProg" class="fz-prog"></div>
+          <div id="fzTabs" class="fz-tabs">
+            <button type="button" data-f="todo" class="on">Chưa đủ</button>
+            <button type="button" data-f="all">Tất cả</button>
+            <button type="button" data-f="done">Đã đủ</button>
+          </div>
+          <div id="fzItems"></div>
+          <div class="fz-foot">
+            <button id="fzReset" type="button" class="ghost">Làm lại PO</button>
+            <button id="fzFinish" type="button">Kết thúc kiểm</button>
+          </div>
+        </div>
+      </section>
+
       <section id="view-set" class="view" hidden>
         <h2>Cài đặt</h2>
         <div class="panel">
@@ -160,13 +189,13 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
       <span>Điều hàng</span>
     </div>
-    <div class="rail-item disabled" data-tab="store">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6"/></svg>
-      <span>Kiểm hàng</span>
-    </div>
     <div class="rail-item disabled" data-tab="das">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
       <span>Ghép PAXD</span>
+    </div>
+    <div class="rail-item" data-tab="frozen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4.9 7l14.2 10M19.1 7L4.9 17M9 4l3 2 3-2M9 20l3-2 3 2"/></svg>
+      <span>Kiểm hàng</span>
     </div>
     <div class="rail-item" data-tab="set">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -191,11 +220,14 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<dialog id="fzDlg"><div id="fzDlgBody"></div><div class="fz-act" id="fzDlgAct"></div></dialog>
+
 <dialog id="dlg">
   <div id="dlgBody"></div>
   <button id="dlgClose" type="button">Đóng</button>
 </dialog>
 
+<script src="frozen.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

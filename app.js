@@ -12,7 +12,7 @@ const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
 const IDLE_MS = 10 * 60000;  // PDA dùng chung: quá thời gian này không chạm/quét gì thì tự đăng xuất
-const ENABLED_TABS = ['list', 'move', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
+const ENABLED_TABS = ['list', 'move', 'frozen', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -322,7 +322,7 @@ function renderDev() {
   if (!d) setTimeout(() => $('#devInput').focus(), 50);
 }
 function saveDev(v) {
-  v = String(v || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  v = String(v || '').trim().replace(/\s+/g, ' ').toUpperCase().slice(0, 30);
   if (!v) { toast('Nhập tên máy, ví dụ PDA-01'); return; }
   try { localStorage.setItem('dev', v); } catch {}
   renderDev(); renderEmp();
@@ -692,6 +692,7 @@ function showTab(t) {
   S.tab = t; store.set('tab', t);
   $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + t; v.classList.toggle('on', !v.hidden); });
   $$('.rail-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  if (t === 'frozen') FZ.show();
   if (t === 'list' && (!S.updatedAt || (S.every > 0 && Date.now() - S.updatedAt > S.every * 1000))) refresh();
   if (t === 'move') {
     renderEmp();
@@ -703,7 +704,7 @@ function showTab(t) {
 // ---------- Tự cập nhật khi bạn đẩy bản mới lên GitHub ----------
 // App mở sẵn cả ngày vẫn chạy bản cũ nếu không tải lại. App định kỳ hỏi GitHub nội dung các file chính, thấy khác
 // bản đang chạy thì tự tải lại, nhưng CHỈ khi không làm gián đoạn ai: không tải lại lúc đang làm một mã (màn hình khoá).
-const APP_FILES = ['index.html', 'app.js', 'style.css'];
+const APP_FILES = ['index.html', 'app.js', 'style.css', 'frozen.js', 'frozen.css'];
 let baseFp = null, updateReady = false;
 
 async function fingerprint() {
