@@ -63,17 +63,25 @@ const FZ = (() => {
     const sc = p => p.num === q ? 0 : p.num.startsWith(q) ? 1 : p.num.includes(q) ? 2 : fold(p.storeName + ' ' + p.po).includes(q) ? 3 : 9;
     return S.data.pos.map(p => [sc(p), p]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || (a[1].num < b[1].num ? -1 : 1)).map(x => x[1]);
   }
+  const cat = p => { const s = status(p); return s.done ? 'done' : s.any ? 'wip' : 'todo'; };
   function renderList() {
-    const ps = match(g('fzQ').value), total = S.data.pos.length;
-    const done = S.data.pos.filter(p => prog(p.po).done).length;
-    g('fzMeta').textContent = 'PO ngày ' + S.data.date + ' · đã kiểm xong ' + done + '/' + total + (g('fzQ').value.trim() ? ' · tìm thấy ' + ps.length : '');
-    g('fzPos').innerHTML = ps.slice(0, 8).map(p => {
+    const qv = g('fzQ').value.trim(), total = S.data.pos.length;
+    const n = { done: 0, wip: 0, todo: 0 }; S.data.pos.forEach(p => n[cat(p)]++);
+    g('fzMeta').textContent = 'PO ngày ' + S.data.date;
+    // Thông số: bấm vào để xem danh sách cửa hàng thuộc nhóm đó
+    const chip = (c, label, v) => '<button type="button" data-c="' + c + '" class="' + (S.cat === c ? 'on ' : '') + 'c-' + c + '"><b>' + v + '</b><span>' + label + '</span></button>';
+    g('fzStats').innerHTML = chip('all', 'Cửa hàng', total) + chip('done', 'Đã kiểm', n.done) + chip('wip', 'Đang kiểm', n.wip) + chip('todo', 'Chưa kiểm', n.todo);
+    let ps, more = 0;
+    if (qv) { ps = match(qv); if (ps.length > 8) { more = ps.length - 8; ps = ps.slice(0, 8); } }
+    else if (S.cat) ps = S.data.pos.filter(p => S.cat === 'all' || cat(p) === S.cat).sort((a, b) => a.num < b.num ? -1 : 1);
+    else ps = [];
+    g('fzPos').innerHTML = ps.map(p => {
       const s = status(p);
       const b = s.done ? (s.diff ? '<span class="fz-badge bad">Lệch</span>' : '<span class="fz-badge ok">Đủ</span>')
         : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.items.length + ' mã</span>' : '<span class="fz-badge">' + p.items.length + ' mã</span>';
-      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>' + 'VN' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
-    }).join('') + (ps.length > 8 ? '<p class="fz-meta">Còn ' + (ps.length - 8) + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
-      || (g('fzQ').value.trim() ? '<p>Không có cửa hàng nào khớp.</p>' : '');
+      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>VN' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
+    }).join('') + (more ? '<p class="fz-meta">Còn ' + more + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
+      || (qv ? '<p>Không có cửa hàng nào khớp.</p>' : '');
   }
 
   // ---------- Kiểm một PO ----------
@@ -83,7 +91,7 @@ const FZ = (() => {
     g('fzTitle').innerHTML = 'VN' + esc(S.po.num) + ' · ' + esc(S.po.storeName) + '<small>' + esc(S.po.po) + '</small>';
     render(); focusScan();
   }
-  function focusQ() { const i = g('fzQ'); i.value = ''; renderList(); setTimeout(() => i.focus(), 30); }
+  function focusQ() { const i = g('fzQ'); i.value = ''; S.cat = null; renderList(); setTimeout(() => i.focus(), 30); }
   function focusScan() { const i = g('fzScan'); i.value = ''; i.focus(); }
 
   const state = (it, n) => n === it[2] ? 'ok' : n > it[2] ? 'bad' : n > 0 ? 'wip' : '';
@@ -137,7 +145,8 @@ const FZ = (() => {
   function bind() {
     if (S.bound) return; S.bound = true;
     g('fzPos').onclick = e => { const el = e.target.closest('.fz-po'); if (el) openPO(el.dataset.po); };
-    g('fzQ').oninput = () => S.data && renderList();
+    g('fzQ').oninput = () => { if (!S.data) return; if (g('fzQ').value.trim()) S.cat = null; renderList(); };
+    g('fzStats').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.cat = S.cat === b.dataset.c ? null : b.dataset.c; g('fzQ').value = ''; renderList(); };
     g('fzQ').onkeydown = e => {
       if (e.key !== 'Enter' || !S.data) return;
       const ps = match(g('fzQ').value);

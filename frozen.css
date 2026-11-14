@@ -39,3 +39,8 @@
 .fz-dlist div{padding:5px 0;border-bottom:1px solid var(--fz-line)}
 .fz-done{margin:10px 0;border-radius:12px;padding:10px 12px;background:var(--fz-warnbg);border:2px solid #E3A33B;color:var(--fz-warn)}
 .fz-done .fz-act{margin-top:8px}
+.fz-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0 12px}
+.fz-stats button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;background:#fff;color:#10192B;border:2px solid var(--fz-line)}
+.fz-stats b{font-size:22px;line-height:1}.fz-stats span{font-size:11px;font-weight:600;color:var(--fz-mut)}
+.fz-stats .c-done b{color:var(--fz-ok)}.fz-stats .c-wip b{color:var(--fz-warn)}.fz-stats .c-todo b{color:var(--fz-bad)}
+.fz-stats button.on{border-color:#1E5BD8;background:#EAF1FF}
