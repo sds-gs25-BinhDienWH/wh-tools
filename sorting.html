@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sorting Productivity</title>
+<link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
+<link rel="stylesheet" href="sorting.css?v=2">
+</head>
+<body>
+<div class="board">
+  <div class="head">
+    <div class="logo">SAMSUNG SDS</div>
+    <div class="title" data-i18n="title"></div>
+  </div>
+
+  <div class="bar">
+    <label><span data-i18n="date"></span> <input type="date" id="date"></label>
+    <button id="btnToday" type="button" data-i18n="today"></button>
+    <button id="btnXlsx" type="button" class="primary" data-i18n="xlsx"></button>
+    <label class="lang"><select id="lang" aria-label="Language">
+      <option value="vi">Tiếng Việt</option>
+      <option value="en">English</option>
+      <option value="ko">한국어</option>
+    </select></label>
+    <span class="live" id="live"></span>
+  </div>
+
+  <div class="sum">
+    <div class="s"><span class="l" data-i18n="sLines"></span><span class="v red" id="sLines">–</span></div>
+    <div class="s"><span class="l" data-i18n="sQty"></span><span class="v" id="sQty">–</span></div>
+    <div class="s"><span class="l" data-i18n="sStores"></span><span class="v" id="sStores">–</span></div>
+    <div class="s"><span class="l" data-i18n="sItems"></span><span class="v" id="sItems">–</span></div>
+    <div class="s"><span class="l" data-i18n="sPeople"></span><span class="v" id="sPeople">–</span></div>
+    <div class="s"><span class="l" data-i18n="sLast"></span><span class="v" id="sLast">–</span></div>
+  </div>
+
+  <div class="cols">
+    <div class="tbl">
+      <div class="tr th"><div class="c-no">#</div><div class="c-name" data-i18n="thWorker"></div><div class="c-n" data-i18n="thLines"></div><div class="c-n" data-i18n="thQty"></div><div class="c-n" data-i18n="thPerHour"></div><div class="c-n" data-i18n="thAvg"></div><div class="c-bar">PROGRESS %</div></div>
+      <div id="rows"></div>
+    </div>
+    <div class="side">
+      <div class="hr">
+        <div class="hr-t" data-i18n="hourTitle"></div>
+        <div class="hbars" id="hbars"></div>
+      </div>
+      <div class="zn">
+        <div class="hr-t" data-i18n="zoneTitle"></div>
+        <div class="zr zh"><div data-i18n="thZone"></div><div data-i18n="thLine"></div><div class="c-n" data-i18n="thLines"></div><div class="c-n" data-i18n="thQty"></div></div>
+        <div id="zrows"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="dot" id="dot"></span><span id="status"></span><span class="r">SAMSUNG SDS · SDS-GS25 Binh Dien Warehouse</span></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="sorting.js?v=2"></script>
+</body>
+</html>

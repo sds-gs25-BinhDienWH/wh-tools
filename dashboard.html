@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SAMSUNG SDS · WH Dashboard</title>
+<link rel="icon" href="icon.svg?v=4" type="image/svg+xml">
+<style>
+  /* Trang gộp: một thanh tab trên cùng + khung hiển thị bảng đang chọn. Mỗi bảng vẫn là trang riêng (tv.html, productivity.html, sorting.html). */
+  :root{--blue:#1428A0;--bar:#1F5FD8;--line:#D1D5DB;--ink:#111827;--muted:#4B5563}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#fff;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:var(--ink)}
+  .app{height:100%;display:flex;flex-direction:column}
+  .tabs{flex:0 0 44px;display:flex;align-items:stretch;gap:2px;padding:0 10px;background:#0b1f6b;overflow-x:auto;white-space:nowrap}
+  .brand{display:flex;align-items:center;padding-right:14px;color:#fff;font-weight:900;letter-spacing:.02em;font-size:15px}
+  .tab{font:inherit;font-weight:700;font-size:14px;color:#c7d2fe;background:transparent;border:0;border-bottom:3px solid transparent;padding:0 16px;cursor:pointer}
+  .tab[hidden]{display:none}
+  .tab:hover{color:#fff;background:rgba(255,255,255,.08)}
+  .tab[aria-selected="true"]{color:#fff;border-bottom-color:#fff;background:var(--bar)}
+  .tab:focus-visible{outline:2px solid #fff;outline-offset:-3px}
+  .tab small{font-weight:600;opacity:.8;margin-left:6px}
+  #view{flex:1;min-height:0}
+  #view iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="tabs" role="tablist" aria-label="Dashboard">
+    <div class="brand">SAMSUNG SDS</div>
+    <button class="tab" role="tab" data-tab="mover" type="button">MOVER<small>Progress</small></button>
+    <button class="tab" role="tab" data-tab="moverprod" type="button" hidden>MOVER<small>Productivity</small></button>
+    <button class="tab" role="tab" data-tab="sorting" type="button">SORTING<small>Productivity</small></button>
+  </div>
+  <div id="view"></div>
+</div>
+<script>
+'use strict';
+// Một link cho cả ba bảng:
+//   dashboard.html#key=<key Sorting>&mkey=<key Mover>[&tab=mover|sorting][&lang=vi|en|ko][&all=1]
+// - key  : DASH_KEY của proxy Sorting (dùng cho tab SORTING)
+// - mkey : DASH_KEY của proxy Mover (dùng cho hai tab MOVER). Bỏ trống thì dùng key chung.
+// - all=1: hiện thêm tab MOVER Productivity (có tên và thời gian từng người, mặc định ẩn khỏi link chiếu TV).
+// - tab  : bảng mở sẵn. Bỏ trống thì mở lại bảng lần trước (nhớ trên máy này).
+// - lang : ngôn ngữ của bảng Sorting.
+// Key nằm sau dấu # nên không gửi lên server khi tải trang. Chỉ chia sẻ link này cho người được phép xem.
+const TABS = {
+  mover:     p => 'tv.html' + p.mover,
+  moverprod: p => 'productivity.html' + p.mover,
+  sorting:   p => 'sorting.html' + p.sorting,
+};
+const $ = s => document.querySelector(s);
+
+const hash = () => new URLSearchParams(location.hash.replace(/^#/, ''));
+function parts() {
+  const h = hash(), key = h.get('key') || '', mkey = h.get('mkey') || key, lang = h.get('lang') || '';
+  const enc = encodeURIComponent;
+  return {
+    mover: mkey ? '#key=' + enc(mkey) : '',
+    sorting: (lang ? '?lang=' + enc(lang) : '') + (key ? '#key=' + enc(key) : ''),
+  };
+}
+const allTabs = () => hash().get('all') === '1' || hash().get('tab') === 'moverprod';
+const okTab = t => TABS[t] && (t !== 'moverprod' || allTabs());
+function current() {
+  const t = hash().get('tab');
+  if (okTab(t)) return t;
+  try { const s = localStorage.getItem('dashTab'); if (okTab(s)) return s; } catch (e) { /* bị chặn thì dùng mặc định */ }
+  return 'mover';
+}
+
+function show(tab, remember) {
+  document.querySelector('[data-tab="moverprod"]').hidden = !allTabs();
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  const f = document.createElement('iframe');             // tạo khung mới mỗi lần để chắc chắn tải lại trang và key mới
+  f.title = tab;
+  f.src = TABS[tab](parts());
+  $('#view').replaceChildren(f);
+  if (remember) {
+    try { localStorage.setItem('dashTab', tab); } catch (e) { /* không lưu được thì thôi */ }
+    const h = hash(); h.set('tab', tab);
+    history.replaceState(null, '', '#' + h.toString());     // link trên thanh địa chỉ luôn mở đúng bảng đang xem
+  }
+}
+
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => show(b.dataset.tab, true)));
+window.addEventListener('hashchange', () => show(current(), false));   // đổi key/tab trên thanh địa chỉ thì tải lại
+show(current(), false);
+</script>
+</body>
+</html>
