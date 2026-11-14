@@ -92,6 +92,7 @@ const FZ = (() => {
     const p = S.po, c = prog(p.po).counts;
     let codes = 0, got = 0; p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n > 0) codes++; got += Math.min(n, it[2]); });
     const pct = p.items.length ? Math.round(codes * 100 / p.items.length) : 0;
+    g('fzDone').hidden = !prog(p.po).done;
     g('fzProg').innerHTML = 'Đã kiểm <b>' + codes + '</b> / ' + p.items.length + ' mã<div class="fz-bar"><i style="width:' + pct + '%"></i></div>';
   }
 
@@ -154,6 +155,7 @@ const FZ = (() => {
     g('fzScan').onkeydown = e => {
       if (e.key !== 'Enter') return;
       const raw = e.target.value.trim(); e.target.value = ''; if (!raw) return;
+      if (prog(S.po.po).done) { beep(false); return; } // đã kết thúc: phải bấm Mở lại mới quét tiếp
       const k = norm(raw), it = S.po.map.get(k), again = (prog(S.po.po).counts[k] || 0) > 0;
       if (!again) setCount(k, it ? it[2] : 1);
       beep(!!it); showLast(k, again); render();
@@ -165,8 +167,9 @@ const FZ = (() => {
       if (visible() && !g('fzDlg').open && !e.target.closest('input,dialog,.rail')) setTimeout(() => { if (visible()) (S.po ? g('fzScan') : g('fzQ')).focus(); }, 50);
     });
     g('fzFinish').onclick = finish;
-    g('fzReset').onclick = () => dialog('<b>Xoá toàn bộ số đã quét của PO này và kiểm lại từ đầu?</b>',
-      [['Không', 'ghost'], ['Làm lại', '', () => { save(key(S.po.po), { counts: {}, done: false }); S.last = null; g('fzLast').hidden = true; render(); focusScan(); }]]);
+    g('fzReopen').onclick = () => { const pr = prog(S.po.po); pr.done = false; save(key(S.po.po), pr); render(); focusScan(); };
+    g('fzReset').onclick = () => dialog('<b>Xoá toàn bộ kết quả đã quét của PO này và kiểm lại từ đầu?</b>',
+      [['Không', 'ghost'], ['Xoá hết', '', () => { save(key(S.po.po), { counts: {}, done: false }); S.last = null; g('fzLast').hidden = true; render(); focusScan(); }]]);
   }
 
   return { show };

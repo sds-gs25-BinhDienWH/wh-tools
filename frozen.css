@@ -37,3 +37,5 @@
 .fz-act{display:flex;gap:8px;margin-top:14px}.fz-act button{flex:1}
 .fz-dlist{max-height:45vh;overflow:auto;font-size:14px;margin-top:8px}
 .fz-dlist div{padding:5px 0;border-bottom:1px solid var(--fz-line)}
+.fz-done{margin:10px 0;border-radius:12px;padding:10px 12px;background:var(--fz-warnbg);border:2px solid #E3A33B;color:var(--fz-warn)}
+.fz-done .fz-act{margin-top:8px}
