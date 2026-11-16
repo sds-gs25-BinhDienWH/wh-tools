@@ -169,6 +169,7 @@ const FZ = (() => {
   function setCount(k, n) {
     const pr = prog(S.po.po); n = Math.max(0, n);
     if (n) pr.counts[k] = n; else delete pr.counts[k];
+    if (pr.marks) delete pr.marks[k]; // quét/sửa lại thì bỏ đánh dấu nguyên hộp/thiếu
     pr.done = false; save(key(S.po.po), pr);
   }
   // Quét một mã -> hiện số lượng PO + chờ xác nhận. Chưa xác nhận (hoặc nhập số khác) thì chưa được quét mã khác.
@@ -197,16 +198,55 @@ const FZ = (() => {
     acts.forEach(([t, cls, fn]) => { const b = document.createElement('button'); b.textContent = t; if (cls) b.className = cls; b.onclick = () => { g('fzDlg').close(); fn && fn(); }; a.appendChild(b); });
     g('fzDlg').showModal();
   }
+  // Kết thúc: mã nào chưa quét thì hỏi "nguyên hộp" (barcode thùng khác barcode sản phẩm, nên không quét được -> tính đủ SL PO) hay "thiếu".
   function finish() {
-    const p = S.po, c = prog(p.po).counts, lack = [], over = [];
-    p.items.forEach(it => { const n = c[norm(it[0])] || 0; if (n === 0) lack.push(it[1] + ' — chưa quét (PO ' + it[2] + ')'); else if (n < it[2]) lack.push(it[1] + ' — ghi nhận ' + n + ', PO ' + it[2]); else if (n > it[2]) over.push(it[1] + ' — thừa ' + (n - it[2])); });
+    S.pending = null; g('fzLast').hidden = true; resolveStep();
+  }
+  function resolveStep() {
+    const p = S.po, pr = prog(p.po), c = pr.counts, m = pr.marks || {};
+    const rows = p.items.filter(it => !(c[norm(it[0])] > 0) || m[norm(it[0])] === 'case');
+    if (!rows.length) { summary(); return; }
+    const undecided = rows.filter(it => !m[norm(it[0])]).length;
+    g('fzDlgBody').innerHTML = '<h3 style="margin:0">Còn ' + rows.length + ' mã chưa quét</h3><div class="fz-hint">Mỗi mã: là <b>nguyên hộp</b> (tính đủ SL PO) hay <b>thiếu</b>?</div><div class="fz-dlist fz-res">' +
+      rows.map(it => { const k = norm(it[0]), v = m[k]; return '<div class="fz-resrow"><div class="nm">' + esc(it[1]) + '<small>' + esc(it[0]) + ' · SL PO ' + it[2] + '</small></div>' +
+        '<button type="button" data-k="' + esc(k) + '" data-v="case" class="' + (v === 'case' ? 'on-case' : 'ghost') + '">Nguyên hộp</button>' +
+        '<button type="button" data-k="' + esc(k) + '" data-v="short" class="' + (v === 'short' ? 'on-short' : 'ghost') + '">Thiếu</button></div>'; }).join('') + '</div>';
+    g('fzDlgBody').onclick = e => {
+      const b = e.target.closest('button[data-k]'); if (!b) return;
+      const q = prog(p.po); q.marks = q.marks || {}; const it = p.map.get(b.dataset.k);
+      if (b.dataset.v === 'case') q.counts[b.dataset.k] = it[2]; else delete q.counts[b.dataset.k];
+      q.marks[b.dataset.k] = b.dataset.v; q.done = false; save(key(p.po), q);
+      const sc = g('fzDlgBody').querySelector('.fz-dlist').scrollTop; resolveStep(); g('fzDlgBody').querySelector('.fz-dlist').scrollTop = sc; render();
+    };
+    const a = g('fzDlgAct'); a.innerHTML = '';
+    const add = (t, cls, fn, dis) => { const b = document.createElement('button'); b.textContent = t; if (cls) b.className = cls; b.disabled = !!dis; b.onclick = fn; a.appendChild(b); };
+    add('Kiểm tiếp', 'ghost', () => g('fzDlg').close());
+    add('Tất cả nguyên hộp', 'ghost', () => { const q = prog(p.po); q.marks = q.marks || {}; rows.forEach(it => { const k = norm(it[0]); if (!q.marks[k]) { q.counts[k] = it[2]; q.marks[k] = 'case'; } }); save(key(p.po), q); resolveStep(); render(); });
+    add(undecided ? 'Còn ' + undecided + ' mã chưa chọn' : 'Tiếp tục', '', () => summary(), undecided);
+    if (!g('fzDlg').open) g('fzDlg').showModal();
+  }
+  function summary() {
+    const p = S.po, pr = prog(p.po), c = pr.counts, m = pr.marks || {}, lack = [], over = [], box = [];
+    p.items.forEach(it => {
+      const k = norm(it[0]), n = c[k] || 0;
+      if (m[k] === 'case') box.push(it[1] + ' — ' + it[2]);
+      else if (n === 0) lack.push(it[1] + ' — thiếu hoàn toàn (PO ' + it[2] + ')');
+      else if (n < it[2]) lack.push(it[1] + ' — ghi nhận ' + n + ', PO ' + it[2]);
+      else if (n > it[2]) over.push(it[1] + ' — thừa ' + (n - it[2]));
+    });
     Object.keys(c).filter(k => !p.map.has(k)).forEach(k => over.push('Mã ngoài PO ' + k + ' — ' + c[k]));
     const list = a => a.map(x => '<div>' + esc(x) + '</div>').join('');
     const ok = !lack.length && !over.length;
-    dialog('<h3 style="margin:0">' + (ok ? 'Đủ hàng ✓' : 'Có chênh lệch') + '</h3><div>' + esc(p.store) + ' · ' + esc(p.po) + '</div>' +
-      (lack.length ? '<b style="color:#C62828">Chưa quét / thiếu (' + lack.length + ')</b><div class="fz-dlist">' + list(lack) + '</div>' : '') +
-      (over.length ? '<b style="color:#B45309">Thừa (' + over.length + ')</b><div class="fz-dlist">' + list(over) + '</div>' : ''),
-      [['Kiểm tiếp', 'ghost'], ['Xác nhận xong', '', () => { const pr = prog(p.po); pr.done = true; save(key(p.po), pr); showList(); }]]);
+    g('fzDlgBody').onclick = null;
+    g('fzDlgBody').innerHTML = '<h3 style="margin:0">' + (ok ? 'Đủ hàng ✓' : 'Có chênh lệch') + '</h3><div>VN' + esc(p.num) + ' · ' + esc(p.po) + '</div>' +
+      (lack.length ? '<b style="color:#C62828">Thiếu / lệch (' + lack.length + ')</b><div class="fz-dlist">' + list(lack) + '</div>' : '') +
+      (over.length ? '<b style="color:#B45309">Thừa (' + over.length + ')</b><div class="fz-dlist">' + list(over) + '</div>' : '') +
+      (box.length ? '<b style="color:#12805C">Nguyên hộp (' + box.length + ')</b><div class="fz-dlist">' + list(box) + '</div>' : '');
+    const a = g('fzDlgAct'); a.innerHTML = '';
+    const add = (t, cls, fn) => { const b = document.createElement('button'); b.textContent = t; if (cls) b.className = cls; b.onclick = fn; a.appendChild(b); };
+    add('Kiểm tiếp', 'ghost', () => g('fzDlg').close());
+    add('Xác nhận xong', '', () => { const q = prog(p.po); q.done = true; save(key(p.po), q); g('fzDlg').close(); showList(); });
+    if (!g('fzDlg').open) g('fzDlg').showModal();
   }
 
   // ---------- Gắn sự kiện (một lần) ----------
