@@ -47,3 +47,5 @@
 .fz-last.ask{background:#EAF1FF;border-color:#1E5BD8}.fz-last.ask .msg{color:#1E5BD8}
 .fz-last .warn{margin:-4px 0 8px;padding:6px 8px;border-radius:8px;background:var(--fz-warnbg);color:var(--fz-warn);font-weight:700;font-size:13px}
 .fz-last .adj .fz-ok{flex:2;padding:14px 8px;font-size:18px;background:var(--fz-ok)}
+.fz-metarow{display:flex;align-items:center;gap:8px;margin:8px 0}.fz-metarow .fz-meta{flex:1;margin:0}.fz-metarow button{padding:6px 10px;font-size:13px;white-space:nowrap}
+.fz-warn{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:var(--fz-badbg);border:2px solid var(--fz-bad);color:var(--fz-bad);font-weight:700;font-size:14px}

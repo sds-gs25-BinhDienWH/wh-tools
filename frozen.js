@@ -42,7 +42,7 @@ const FZ = (() => {
     if (f !== '' || row.length) { row.push(f); rows.push(row); }
     return rows;
   }
-  const getCSV = async url => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return parseCSV(await r.text()); };
+  const getCSV = async url => { const r = await fetch(url + '&t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return parseCSV(await r.text()); };
 
   async function fromSheet() {
     const [det, sto] = await Promise.all([getCSV(DETAIL_URL), getCSV(STORE_URL).catch(() => [])]);
@@ -79,21 +79,26 @@ const FZ = (() => {
     const d = await r.json(); d.source = 'Dự phòng (Sheet chưa có dữ liệu)'; return d;
   }
 
-  async function ensureData() {
-    if (S.data || S.loading) return;
-    S.loading = true; g('fzPos').innerHTML = '<p>Đang tải danh sách cửa hàng…</p>';
+  // force = tải lại từ Sheet (giữ dữ liệu cũ nếu lần tải này lỗi)
+  async function ensureData(force) {
+    if (S.loading || (S.data && !force)) return;
+    S.loading = true;
+    if (!S.data) g('fzPos').innerHTML = '<p>Đang tải danh sách cửa hàng…</p>';
+    else g('fzRefresh').textContent = 'Đang cập nhật…';
     try {
-      try { S.data = await fromSheet(); } catch (e) { S.data = await fromFile(); S.data.err = e.message; }
-      S.data.pos.forEach(p => { p.map = new Map(p.items.map(i => [norm(i[0]), i])); p.total = p.items.reduce((a, i) => a + i[2], 0); });
-    } catch (e) { g('fzPos').innerHTML = '<p>Không tải được dữ liệu (' + esc(e.message) + ').</p>'; }
-    S.loading = false;
-    if (S.data) showList();
+      let d;
+      try { d = await fromSheet(); }
+      catch (e) { if (S.data) { S.data.err = e.message === 'EMPTY' ? 'Sheet đang trống' : e.message; d = null; } else { d = await fromFile(); d.err = e.message; } }
+      if (d) { d.at = Date.now(); d.pos.forEach(p => { p.map = new Map(p.items.map(i => [norm(i[0]), i])); p.total = p.items.reduce((a, i) => a + i[2], 0); }); S.data = d; }
+    } catch (e) { if (!S.data) g('fzPos').innerHTML = '<p>Không tải được dữ liệu (' + esc(e.message) + ').</p>'; }
+    S.loading = false; g('fzRefresh').textContent = '↻ Cập nhật';
+    if (S.data && !S.po) showList();
   }
 
   function show() {
     bind();
     if (!S.data) { ensureData(); return; }
-    if (S.po) focusScan(); else { g('fzQ').focus(); }
+    if (S.po) focusScan(); else { if (Date.now() - (S.data.at || 0) > 120000) ensureData(true); g('fzQ').focus(); } // vào lại tab sau > 2 phút thì tự lấy dữ liệu mới (không làm khi đang trong một PO)
   }
 
   function status(p) {
@@ -120,7 +125,11 @@ const FZ = (() => {
   function renderList() {
     const qv = g('fzQ').value.trim(), total = S.data.pos.length;
     const n = { done: 0, wip: 0, todo: 0 }; S.data.pos.forEach(p => n[cat(p)]++);
-    g('fzMeta').textContent = 'Ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
+    const t = new Date(S.data.at || Date.now()), pad = x => String(x).padStart(2, '0');
+    g('fzMeta').textContent = 'Ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + ' · cập nhật ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
+    const now = new Date(), today = pad(now.getDate()) + '/' + pad(now.getMonth() + 1) + '/' + now.getFullYear();
+    const w = g('fzWarn'); w.hidden = S.data.date === today;
+    w.textContent = '⚠ Dữ liệu là của ngày ' + S.data.date + ', chưa phải hôm nay (' + today + '). Kiểm tra lại Sheet đã dán dữ liệu mới chưa, rồi bấm Cập nhật.';
     // Thông số: bấm vào để xem danh sách cửa hàng thuộc nhóm đó
     const chip = (c, label, v) => '<button type="button" data-c="' + c + '" class="' + (S.cat === c ? 'on ' : '') + 'c-' + c + '"><b>' + v + '</b><span>' + label + '</span></button>';
     g('fzStats').innerHTML = chip('all', 'Cửa hàng', total) + chip('done', 'Đã kiểm', n.done) + chip('wip', 'Đang kiểm', n.wip) + chip('todo', 'Chưa kiểm', n.todo);
@@ -204,6 +213,7 @@ const FZ = (() => {
   function bind() {
     if (S.bound) return; S.bound = true;
     g('fzPos').onclick = e => { const el = e.target.closest('.fz-po'); if (el) openPO(el.dataset.po); };
+    g('fzRefresh').onclick = () => ensureData(true);
     g('fzQ').oninput = () => { if (!S.data) return; if (g('fzQ').value.trim()) S.cat = null; renderList(); };
     g('fzStats').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.cat = S.cat === b.dataset.c ? null : b.dataset.c; g('fzQ').value = ''; renderList(); };
     g('fzQ').onkeydown = e => {
