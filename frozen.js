@@ -24,15 +24,68 @@ const FZ = (() => {
     } catch {}
   }
 
+  // Nguồn dữ liệu: Google Sheet (nhân viên dán sheet Detail của file Allocation vào tab Detail Data hàng ngày; tab Store có STORE ID, STORE NAME).
+  // Hai link dưới là link "Xuất bản lên web" dạng CSV. Sheet trống hoặc lỗi thì dùng tạm frozen-data.json.
+  const SHEET = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTep-iGhHUh0oyxUZZQj8Z_UoEH5ZdS_y3HnLVGiTXUBaWflEliVaTUWo9C9poXatzwZ9I4wV5hdeTi/pub';
+  const DETAIL_URL = SHEET + '?gid=0&single=true&output=csv', STORE_URL = SHEET + '?gid=99054321&single=true&output=csv';
+
+  function parseCSV(t) {
+    const rows = []; let row = [], f = '', q = false;
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(f); f = ''; }
+      else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+      else if (c !== '\r') f += c;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows;
+  }
+  const getCSV = async url => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return parseCSV(await r.text()); };
+
+  async function fromSheet() {
+    const [det, sto] = await Promise.all([getCSV(DETAIL_URL), getCSV(STORE_URL).catch(() => [])]);
+    const head = (det[0] || []).map(h => h.trim().toLowerCase());
+    const col = n => head.indexOf(n);
+    const cCode = col('item code'), cDo = col('do no.'), cName = col('item name'), cAlloc = col('allocation qty.');
+    if (cCode < 0 || cDo < 0 || cAlloc < 0) throw new Error('Sheet Detail Data thiếu cột Item Code / DO No. / Allocation Qty.');
+    const names = new Map();
+    sto.slice(1).forEach(r => { const id = (r[0] || '').trim().toUpperCase(); if (id) names.set(id, (r[1] || '').trim().replace(new RegExp('^' + id + '\\s*', 'i'), '')); });
+    const pos = new Map(), dates = {};
+    for (const r of det.slice(1)) {
+      const code = (r[cCode] || '').trim(), dn = (r[cDo] || '').trim();
+      if (!code || !dn) continue;
+      const qty = parseInt(String(r[cAlloc] || '').replace(/[^\d-]/g, ''), 10) || 0;
+      const m = dn.replace(/WH34$/i, '').match(/(\d\d)(\d\d)(\d\d)$/);
+      if (m) { const d = m[3] + '/' + m[2] + '/20' + m[1]; dates[d] = (dates[d] || 0) + 1; }
+      if (qty <= 0) continue; // không có allocation = không có tồn: bỏ
+      let p = pos.get(dn);
+      if (!p) {
+        const sm = dn.match(/^VN(\d{4})/); if (!sm) continue;
+        const num = sm[1] === '9997' ? dn.slice(6, 10) : sm[1];
+        p = { po: dn, store: 'VN' + sm[1], num, storeName: names.get('VN' + num) || '', items: [] }; pos.set(dn, p);
+      }
+      const ex = p.items.find(i => norm(i[0]) === norm(code));
+      if (ex) ex[2] += qty; else p.items.push([code, (r[cName] || '').trim(), qty]);
+    }
+    if (!pos.size) throw new Error('EMPTY');
+    const date = Object.keys(dates).sort((a, b) => dates[b] - dates[a])[0] || '';
+    return { date, source: 'Google Sheet', pos: [...pos.values()].sort((a, b) => a.num < b.num ? -1 : a.num > b.num ? 1 : 0) };
+  }
+  async function fromFile() {
+    const r = await fetch('frozen-data.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json(); d.source = 'Dự phòng (Sheet chưa có dữ liệu)'; return d;
+  }
+
   async function ensureData() {
     if (S.data || S.loading) return;
-    S.loading = true; g('fzPos').innerHTML = '<p>Đang tải danh sách PO…</p>';
+    S.loading = true; g('fzPos').innerHTML = '<p>Đang tải danh sách cửa hàng…</p>';
     try {
-      const r = await fetch('frozen-data.json', { cache: 'no-cache' });
-      if (!r.ok) throw new Error(r.status);
-      S.data = await r.json();
+      try { S.data = await fromSheet(); } catch (e) { S.data = await fromFile(); S.data.err = e.message; }
       S.data.pos.forEach(p => { p.map = new Map(p.items.map(i => [norm(i[0]), i])); p.total = p.items.reduce((a, i) => a + i[2], 0); });
-    } catch (e) { g('fzPos').innerHTML = '<p>Không tải được dữ liệu PO (' + esc(e.message) + ').</p>'; }
+    } catch (e) { g('fzPos').innerHTML = '<p>Không tải được dữ liệu (' + esc(e.message) + ').</p>'; }
     S.loading = false;
     if (S.data) showList();
   }
@@ -67,7 +120,7 @@ const FZ = (() => {
   function renderList() {
     const qv = g('fzQ').value.trim(), total = S.data.pos.length;
     const n = { done: 0, wip: 0, todo: 0 }; S.data.pos.forEach(p => n[cat(p)]++);
-    g('fzMeta').textContent = 'PO ngày ' + S.data.date;
+    g('fzMeta').textContent = 'Ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
     // Thông số: bấm vào để xem danh sách cửa hàng thuộc nhóm đó
     const chip = (c, label, v) => '<button type="button" data-c="' + c + '" class="' + (S.cat === c ? 'on ' : '') + 'c-' + c + '"><b>' + v + '</b><span>' + label + '</span></button>';
     g('fzStats').innerHTML = chip('all', 'Cửa hàng', total) + chip('done', 'Đã kiểm', n.done) + chip('wip', 'Đang kiểm', n.wip) + chip('todo', 'Chưa kiểm', n.todo);
