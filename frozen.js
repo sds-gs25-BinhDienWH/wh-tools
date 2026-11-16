@@ -127,10 +127,6 @@ const FZ = (() => {
     const n = { done: 0, wip: 0, todo: 0 }; S.data.pos.forEach(p => n[cat(p)]++);
     const t = new Date(S.data.at || Date.now()), pad = x => String(x).padStart(2, '0');
     g('fzMeta').textContent = 'Đơn ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + ' · cập nhật ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
-    // Ngày trong mã DO là ngày ĐẶT hàng, thường kiểm sau 1-2 ngày nên chỉ cảnh báo khi dữ liệu cũ hơn 3 ngày
-    const dp = String(S.data.date || '').split('/'), age = dp.length === 3 ? Math.floor((Date.now() - new Date(+dp[2], dp[1] - 1, +dp[0]).getTime()) / 86400000) : 0;
-    const w = g('fzWarn'); w.hidden = !(age > 3);
-    w.textContent = '⚠ Dữ liệu là đơn ngày ' + S.data.date + ' (cách đây ' + age + ' ngày). Kiểm tra Sheet đã dán dữ liệu mới chưa, rồi bấm Cập nhật.';
   }
 
   // ---------- Kiểm một PO ----------
