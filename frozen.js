@@ -126,24 +126,11 @@ const FZ = (() => {
     const qv = g('fzQ').value.trim(), total = S.data.pos.length;
     const n = { done: 0, wip: 0, todo: 0 }; S.data.pos.forEach(p => n[cat(p)]++);
     const t = new Date(S.data.at || Date.now()), pad = x => String(x).padStart(2, '0');
-    g('fzMeta').textContent = 'Ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + ' · cập nhật ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
-    const now = new Date(), today = pad(now.getDate()) + '/' + pad(now.getMonth() + 1) + '/' + now.getFullYear();
-    const w = g('fzWarn'); w.hidden = S.data.date === today;
-    w.textContent = '⚠ Dữ liệu là của ngày ' + S.data.date + ', chưa phải hôm nay (' + today + '). Kiểm tra lại Sheet đã dán dữ liệu mới chưa, rồi bấm Cập nhật.';
-    // Thông số: bấm vào để xem danh sách cửa hàng thuộc nhóm đó
-    const chip = (c, label, v) => '<button type="button" data-c="' + c + '" class="' + (S.cat === c ? 'on ' : '') + 'c-' + c + '"><b>' + v + '</b><span>' + label + '</span></button>';
-    g('fzStats').innerHTML = chip('all', 'Cửa hàng', total) + chip('done', 'Đã kiểm', n.done) + chip('wip', 'Đang kiểm', n.wip) + chip('todo', 'Chưa kiểm', n.todo);
-    let ps, more = 0;
-    if (qv) { ps = match(qv); if (ps.length > 8) { more = ps.length - 8; ps = ps.slice(0, 8); } }
-    else if (S.cat) ps = S.data.pos.filter(p => S.cat === 'all' || cat(p) === S.cat).sort((a, b) => a.num < b.num ? -1 : 1);
-    else ps = [];
-    g('fzPos').innerHTML = ps.map(p => {
-      const s = status(p);
-      const b = s.done ? (s.diff ? '<span class="fz-badge bad">Lệch</span>' : '<span class="fz-badge ok">Đủ</span>')
-        : s.any ? '<span class="fz-badge wip">' + s.got + '/' + p.items.length + ' mã</span>' : '<span class="fz-badge">' + p.items.length + ' mã</span>';
-      return '<div class="fz-po" data-po="' + esc(p.po) + '"><div><b>VN' + esc(p.num) + ' · ' + esc(p.storeName) + '</b><small>' + esc(p.po) + ' · ' + p.items.length + ' mã</small></div>' + b + '</div>';
-    }).join('') + (more ? '<p class="fz-meta">Còn ' + more + ' cửa hàng nữa, gõ thêm số để lọc.</p>' : '')
-      || (qv ? '<p>Không có cửa hàng nào khớp.</p>' : '');
+    g('fzMeta').textContent = 'Đơn ngày ' + S.data.date + ' · Nguồn: ' + S.data.source + ' · cập nhật ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + (S.data.err && S.data.err !== 'EMPTY' ? ' (' + S.data.err + ')' : '');
+    // Ngày trong mã DO là ngày ĐẶT hàng, thường kiểm sau 1-2 ngày nên chỉ cảnh báo khi dữ liệu cũ hơn 3 ngày
+    const dp = String(S.data.date || '').split('/'), age = dp.length === 3 ? Math.floor((Date.now() - new Date(+dp[2], dp[1] - 1, +dp[0]).getTime()) / 86400000) : 0;
+    const w = g('fzWarn'); w.hidden = !(age > 3);
+    w.textContent = '⚠ Dữ liệu là đơn ngày ' + S.data.date + ' (cách đây ' + age + ' ngày). Kiểm tra Sheet đã dán dữ liệu mới chưa, rồi bấm Cập nhật.';
   }
 
   // ---------- Kiểm một PO ----------
