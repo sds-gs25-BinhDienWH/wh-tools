@@ -95,3 +95,19 @@
 #view-photo .ph-trip small{font-size:11px;font-weight:600;color:var(--ph-mut)}
 #view-photo .ph-trip.on{background:var(--ph-blue);color:#fff;border-color:var(--ph-blue)}#view-photo .ph-trip.on small{color:#dbe7ff}
 .ph-tinfo{font-size:12px;font-weight:700;color:var(--ph-mut)}.ph-tinfo.warn{color:var(--ph-warn)}
+
+/* ---------- Tình hình hôm nay + loại hàng ---------- */
+.ph-stats:empty{display:none}
+.ph-stats{margin:10px 0;padding:12px;border:1px solid var(--ph-line);border-radius:12px;background:var(--card)}
+.ph-stat-top{display:flex;gap:8px;text-align:center}.ph-stat-top>div{flex:1;min-width:0}
+.ph-stat-top b{display:block;font-size:26px;line-height:1.1;color:var(--ph-blue)}.ph-stat-top span{display:block;font-size:11px;font-weight:700;color:var(--ph-mut)}
+.ph-stat-plan{margin-top:10px;font-size:13px}
+.ph-bar{height:8px;border-radius:99px;background:var(--ph-line);overflow:hidden;margin-top:6px}.ph-bar i{display:block;height:100%;background:var(--ph-ok)}
+.ph-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ph-chip{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--ph-bluebg);color:var(--ph-blue)}
+.ph-done{font-size:11px;font-weight:800;padding:2px 7px;border-radius:99px;background:var(--ph-okbg);color:var(--ph-ok)}
+.ph-ok{color:var(--ph-ok);font-weight:800}.ph-todo{color:var(--ph-warn);font-weight:800}
+.ph-plan-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#view-photo .ph-todo-btn{padding:6px 10px;font-size:12px;background:var(--card);color:var(--ink);border:1.5px solid var(--ph-line)}
+#view-photo .ph-todo-btn.on{background:var(--ph-blue);color:#fff;border-color:var(--ph-blue)}
+.ph-store small{display:block;color:var(--ph-mut);font-size:12px;font-weight:600}
+.ph-trips .ph-tinfo{margin:0 0 2px}
