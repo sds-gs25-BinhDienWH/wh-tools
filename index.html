@@ -131,7 +131,8 @@
         <!-- Bước 1: chọn cửa hàng -->
         <div id="phPick">
           <h2>Chụp ảnh rổ</h2>
-          <div class="ph-scan"><input id="phQ" type="search" placeholder="Quét/nhập số cửa hàng (vd 0052)" autocomplete="off" inputmode="none"><button id="phKbd2" type="button" class="ghost" title="Bật/tắt bàn phím">⌨</button></div>
+          <div id="phQSeg" class="ph-seg" role="group" aria-label="Cách chọn cửa hàng"><button type="button" data-m="scan" class="on">Quét</button><button type="button" data-m="type">Nhập tay</button></div>
+          <div class="ph-scan"><input id="phQ" type="search" placeholder="Bấm nút quét của PDA, quét mã cửa hàng" autocomplete="off" inputmode="none"></div>
           <div id="phQMsg" class="hint"></div>
           <div id="phStats" class="ph-stats"></div>
           <div id="phSugg" class="ph-pick-list"></div>
@@ -149,6 +150,8 @@
           <div class="ph-cam"><video id="phVideo" playsinline muted autoplay></video><div id="phCamMsg"></div></div>
           <div class="ph-actions"><button id="phTorch" type="button" class="ghost" hidden>Đèn</button><button id="phShot" type="button" disabled>CHỤP</button></div>
           <button id="phMore" type="button" class="ghost" hidden></button>
+          <button id="phDone" type="button" class="ph-done-btn" disabled>XONG CỬA HÀNG</button>
+          <div id="phVisit" class="ph-visit"></div>
           <div id="phList" class="ph-list"></div>
         </div>
       </section>
@@ -246,6 +249,9 @@
   <div class="lk-fbar"><div id="lkFullCap" class="lk-fcap"></div><a id="lkDownload" class="lk-dl" href="#" download>Tải về</a><button type="button" id="lkFullClose" class="lk-x" aria-label="Đóng">✕</button></div>
   <div class="lk-fbody"><button type="button" id="lkFullPrev" class="lk-nav" aria-label="Ảnh trước">‹</button><div class="lk-fimg"><img id="lkFullImg" alt=""><div id="lkFullMsg"></div></div><button type="button" id="lkFullNext" class="lk-nav" aria-label="Ảnh sau">›</button></div>
 </div>
+
+<!-- Hộp xác nhận kết thúc cửa hàng (tab Chụp ảnh) -->
+<div id="phFin" class="ph-fin" hidden><div class="ph-fin-box"><h3>Kết thúc cửa hàng?</h3><div id="phFinSum"></div><div class="ph-fin-act"><button type="button" id="phFinNo" class="ghost">CHỤP TIẾP</button><button type="button" id="phFinOk">XONG</button></div></div></div>
 
 <div id="toast" class="toast" hidden></div>
 

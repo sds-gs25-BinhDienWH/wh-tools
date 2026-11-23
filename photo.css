@@ -111,3 +111,23 @@
 #view-photo .ph-todo-btn.on{background:var(--ph-blue);color:#fff;border-color:var(--ph-blue)}
 .ph-store small{display:block;color:var(--ph-mut);font-size:12px;font-weight:600}
 .ph-trips .ph-tinfo{margin:0 0 2px}
+
+/* ---------- Chọn cửa hàng: Quét / Nhập tay; kết thúc cửa hàng ---------- */
+.ph-seg{display:flex;gap:4px;padding:4px;margin:0 0 8px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+#view-photo .ph-seg button{flex:1;height:44px;border-radius:8px;font-size:15px;font-weight:800;background:transparent;color:var(--muted);padding:0}
+#view-photo .ph-seg button.on{background:var(--navy);color:#fff}
+.ph-stat-top b.wip{color:var(--ph-warn)}
+.ph-stat-top b{font-size:22px}
+.ph-wip{font-size:11px;font-weight:800;padding:2px 7px;border-radius:99px;background:var(--ph-warnbg);color:var(--ph-warn)}
+#view-photo .ph-done-btn{width:100%;height:56px;margin:0 0 6px;font-size:18px;background:var(--navy);color:#fff}
+#view-photo .ph-done-btn:disabled{background:var(--card);color:var(--muted);border:1.5px dashed var(--ph-line);opacity:1}
+.ph-visit{font-size:12px;font-weight:700;color:var(--ph-warn);margin:0 0 8px;min-height:0}.ph-visit:empty{display:none}
+#view-photo .ph-head button.blocked{opacity:.45}
+.ph-fin{position:fixed;inset:0;z-index:10004;background:rgba(10,25,48,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.ph-fin[hidden]{display:none}
+.ph-fin-box{width:min(100%,380px);background:var(--card);color:var(--ink);border-radius:16px;padding:18px;box-shadow:var(--shadow)}
+.ph-fin-box h3{margin:0 0 10px;font-size:18px}
+.ph-fin-n{margin:10px 0;font-size:15px}.ph-fin-n b{font-size:34px;color:var(--ph-blue)}
+.ph-fin-act{display:flex;gap:8px;margin-top:14px}
+.ph-fin-box button{flex:1;height:54px;margin:0;font-size:16px;font-weight:800;border-radius:10px;border:0;background:var(--ph-ok,#12805C);color:#fff;width:auto;padding:0}
+.ph-fin-box button.ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--border)}

@@ -35,6 +35,8 @@ const PH = (() => {
     stats: null, statsAt: 0, statsTimer: null, onlyTodo: false,   // tình hình hôm nay (số cửa hàng/ảnh đã chụp)
     stream: null, track: null, torch: false, starting: false,
     kbd: false, bound: false, busyShot: false, lastSubmit: 0,
+    qmode: load('ph:qmode', 'scan') === 'type' ? 'type' : 'scan',   // cách chọn cửa hàng: scan = quét bằng PDA, type = nhập tay
+    visit: 0,           // số ảnh đã chụp trong lần chọn cửa hàng này (>0 thì BẮT BUỘC bấm XONG CỬA HÀNG mới đổi cửa hàng được)
     noBatch: false,     // máy chủ ảnh chưa có uploadPhotos (chưa cập nhật Code.gs): gửi từng ảnh như bản cũ
     shots: [], sending: false, timer: null, pickTimer: null, scanTimer: null,
   };
@@ -122,7 +124,9 @@ const PH = (() => {
 
   // ---------- Tình hình hôm nay: đã chụp bao nhiêu cửa hàng / ảnh (đếm từ tab Ảnh qua proxy, làm mới mỗi 60 giây và sau mỗi ảnh gửi xong) ----------
   const statStore = id => (P.stats && P.stats.stores && P.stats.stores[id]) || null;
-  const storeDone = id => !!statStore(id);
+  // Trạng thái 1 cửa hàng hôm nay (theo máy chủ): none = chưa chụp; wip = ĐANG DỞ (có ảnh nhưng chưa bấm Xong, hoặc chụp thêm sau lần Xong cuối); done = ĐÃ XONG (giờ Xong >= giờ ảnh cuối)
+  const storeState = id => { const s = statStore(id); if (!s || !(s.n > 0)) return 'none'; return s.fin && s.fin >= s.last ? 'done' : 'wip'; };
+  const storeDone = id => storeState(id) === 'done';
 
   async function loadStats(force) {
     if (!/^https:\/\//i.test(PHOTO_URL) || typeof S === 'undefined' || !S.emp) return;
@@ -134,30 +138,73 @@ const PH = (() => {
       if (d && d.ok) { P.stats = d; P.statsAt = Date.now(); }
     } catch { /* mất mạng: giữ số cũ */ }
     clearTimeout(tm);
-    if (visible()) { renderStats(); renderStoreNote(); if (!P.store) renderSugg(); }
+    if (visible()) { renderStats(); renderStoreNote(); renderDone(); fillFinSum(); if (!P.store) renderSugg(); }
   }
 
   function renderStats() {
     const box = g('phStats'); if (!box) return;
     const st = P.stats;
     if (!st) { box.innerHTML = ''; return; }
-    const done = Object.keys(st.stores || {}).length;
+    let nDone = 0, nWip = 0;
+    Object.keys(st.stores || {}).forEach(id => { const x = storeState(id); if (x === 'done') nDone++; else if (x === 'wip') nWip++; });
     const all = new Set();
     planTrips().forEach(t => t.stores.forEach(id => all.add(id)));
-    const doneInPlan = [...all].filter(id => statStore(id)).length;
-    let h = '<div class="ph-stat-top"><div><b>' + done + '</b><span>cửa hàng đã chụp</span></div><div><b>' + st.photos + '</b><span>ảnh hôm nay</span></div><div><b>' + st.totes + '</b><span>rổ có quét mã</span></div></div>';
+    const doneInPlan = [...all].filter(id => storeState(id) === 'done').length, wipInPlan = [...all].filter(id => storeState(id) === 'wip').length;
+    let h = '<div class="ph-stat-top"><div><b>' + nDone + '</b><span>cửa hàng xong</span></div><div><b class="wip">' + nWip + '</b><span>đang chụp dở</span></div><div><b>' + st.photos + '</b><span>ảnh hôm nay</span></div><div><b>' + st.totes + '</b><span>rổ có mã</span></div></div>';
     if (all.size) {
-      h += '<div class="ph-stat-plan">Theo lịch: <b>' + doneInPlan + '/' + all.size + '</b> cửa hàng đã có ảnh · còn <b>' + (all.size - doneInPlan) + '</b>' +
-        '<div class="ph-bar"><i style="width:' + Math.round(doneInPlan * 100 / all.size) + '%"></i></div>';
-      h += '</div>';
+      h += '<div class="ph-stat-plan">Theo lịch: <b>' + doneInPlan + '/' + all.size + '</b> cửa hàng đã xong' + (wipInPlan ? ' · <b>' + wipInPlan + '</b> đang dở' : '') + ' · còn <b>' + (all.size - doneInPlan - wipInPlan) + '</b> chưa chụp' +
+        '<div class="ph-bar"><i style="width:' + Math.round(doneInPlan * 100 / all.size) + '%"></i></div></div>';
     }
     box.innerHTML = h;
   }
-  // Dòng nhỏ ở màn chụp: cửa hàng đang chọn hôm nay đã có mấy ảnh (tránh chụp trùng)
+  // Dòng nhỏ ở màn chụp: trạng thái cửa hàng đang chọn hôm nay (tránh chụp trùng / quên bấm Xong)
   function renderStoreNote() {
     const el = g('phStoreNote'); if (!el || !P.store) return;
+    const id = P.store.id, s = statStore(id), stt = storeState(id);
+    el.textContent = !P.stats ? '' : stt === 'done' ? 'Đã xong hôm nay (' + s.n + ' ảnh). Chụp thêm thì phải bấm XONG lại' : stt === 'wip' ? 'Hôm nay đã có ' + s.n + ' ảnh, CHƯA bấm XONG' : 'Hôm nay cửa hàng này chưa có ảnh nào';
+  }
+
+  // ---------- Kết thúc cửa hàng: BẮT BUỘC bấm "XONG CỬA HÀNG" ----------
+  // Đã chụp ảnh trong lần này (visit > 0) thì không đổi cửa hàng được cho tới khi bấm Xong. Chưa chụp ảnh nào (chọn nhầm) thì đổi tự do.
+  // Bấm Xong tạo 1 việc "finish" trong hàng đợi, xếp SAU các ảnh của cửa hàng đó (cùng thứ tự thời gian) nên mất mạng cũng không sai thứ tự.
+  function renderDone() {
+    const b = g('phDone'); if (!b || !P.store) return;
     const s = statStore(P.store.id);
-    el.textContent = !P.stats ? '' : s ? 'Hôm nay cửa hàng này đã có ' + s.n + ' ảnh' : 'Hôm nay cửa hàng này chưa có ảnh nào';
+    b.disabled = !(P.visit > 0 || (s && s.n > 0 && storeState(P.store.id) !== 'done'));
+    g('phVisit').textContent = P.visit ? 'Đã chụp ' + P.visit + ' ảnh lần này · chụp hết thì bấm XONG CỬA HÀNG' : '';
+    g('phBack').classList.toggle('blocked', P.visit > 0);
+  }
+  // Tóm tắt trong hộp xác nhận: số ảnh = max(thống kê máy chủ + ảnh đang chờ gửi, số ảnh đã chụp lần này). Thống kê máy chủ có thể trễ vài giây sau khi ảnh
+  // vừa gửi xong nên lấy số lớn hơn; khi thống kê mới về (loadStats) hộp tự cập nhật lại.
+  async function fillFinSum() {
+    if (!P.store || g('phFin').hidden) return;
+    const id = P.store.id;
+    let pend = 0;
+    try { pend = (await idb.all()).filter(i => !i.kind && i.store === id && !i.dead).length; } catch {}
+    const s = statStore(id), total = Math.max((s ? s.n : 0) + pend, P.visit);
+    g('phFinSum').innerHTML = '<b>' + esc(id) + '</b>' + (P.store.name ? ' · ' + esc(P.store.name) : '') +
+      '<div class="ph-fin-n"><b>' + total + '</b> ảnh hôm nay</div>' +
+      (total === 0 ? '<div class="ph-tinfo warn">Chưa có ảnh nào của cửa hàng này</div>' : '');
+  }
+  async function askFinish() {
+    if (!P.store) return;
+    g('phFin').hidden = false;
+    await fillFinSum();
+    loadStats(true);                                                  // lấy số mới nhất; xong thì hộp tự cập nhật
+  }
+  async function doFinish() {
+    const e = S.emp, st = P.store; g('phFin').hidden = true;
+    if (!e || !st) return;
+    const item = { id: 'F' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: 'finish', emp: e.id, empName: e.name, store: st.id, storeName: st.name,
+      takenAt: Date.now(), dev: getDev(), tries: 0, dead: false, err: '' };
+    await idb.put(item);
+    if (P.stats && P.stats.stores) {                                  // hiện "đã xong" ngay, chờ máy chủ xác nhận ở lần làm mới sau
+      const x = P.stats.stores[st.id] || (P.stats.stores[st.id] = { n: P.visit, last: 0, fin: 0, types: {} });
+      x.fin = Date.now() + 1;
+    }
+    beep(true); toast('Đã kết thúc ' + st.id);
+    backToPick(true);
+    pump();
   }
 
   // ---------- Danh sách chọn cửa hàng: LUÔN hiện bên dưới ô quét/nhập ----------
@@ -168,7 +215,7 @@ const PH = (() => {
     const ts = withTrip ? tripsOfStore(s.id) : [];
     return '<button type="button" class="sg" data-id="' + esc(s.id) + '"><b>' + esc(s.id) + '</b><small>' + esc(s.name) + '</small>' +
       (ts.length ? '<span class="ph-badges">' + ts.map(t => '<i>C' + esc(t.trip) + (t.type ? ' ' + esc(t.type) : '') + '</i>').join('') + '</span>' : '') +
-      (statStore(s.id) ? '<span class="ph-done">✓ ' + statStore(s.id).n + ' ảnh</span>' : '') + '</button>';
+      (storeState(s.id) === 'done' ? '<span class="ph-done">✓ xong · ' + statStore(s.id).n + ' ảnh</span>' : storeState(s.id) === 'wip' ? '<span class="ph-wip">◐ đang chụp · ' + statStore(s.id).n + ' ảnh</span>' : '') + '</button>';
   }
   function renderSugg() {
     const box = g('phSugg'), raw = g('phQ').value.trim(), msg = g('phQMsg');
@@ -190,11 +237,11 @@ const PH = (() => {
         return { t, doneN, list };
       }).filter(x => !P.onlyTodo || x.list.length);
       box.innerHTML = '<div class="ph-plan-h"><span>Lịch chuyến' + (P.plan.date ? ' ' + dmy(P.plan.date) : '') + '</span>' +
-        '<button type="button" class="ph-todo-btn' + (P.onlyTodo ? ' on' : '') + '">' + (P.onlyTodo ? 'Hiện tất cả' : 'Chỉ hiện cửa hàng chưa chụp') + '</button></div>' +
+        '<button type="button" class="ph-todo-btn' + (P.onlyTodo ? ' on' : '') + '">' + (P.onlyTodo ? 'Hiện tất cả' : 'Chỉ hiện cửa hàng chưa xong') + '</button></div>' +
         (groups.length ? groups.map(x => '<details class="ph-trip-g" data-t="' + esc(x.t.trip) + '"' + (open.has(String(x.t.trip)) ? ' open' : '') + '><summary><b>' + esc(tripLabel(x.t)) + '</b> · ' + x.t.stores.length + ' CH' +
           ' · <span class="' + (x.doneN === x.t.stores.length ? 'ph-ok' : 'ph-todo') + '">✓ ' + x.doneN + '/' + x.t.stores.length + '</span>' +
           '<small>' + [x.t.truck, x.t.plate, x.t.driver].filter(Boolean).map(esc).join(' · ') + '</small></summary>' +
-          x.list.map(id => storeBtn(storeById(id), false)).join('') + '</details>').join('') : '<div class="sg-note">Tất cả cửa hàng trong lịch đã có ảnh hôm nay ✓</div>');
+          x.list.map(id => storeBtn(storeById(id), false)).join('') + '</details>').join('') : '<div class="sg-note">Tất cả cửa hàng trong lịch đã xong ✓</div>');
       return;
     }
     if (P.plan && P.plan.note) msg.textContent = 'Lịch chuyến: ' + P.plan.note;
@@ -225,15 +272,18 @@ const PH = (() => {
   function pickStore(s) {
     if (!s) return;
     clearTimeout(P.pickTimer);
-    P.store = s; P.tote = ''; P.lastTote = '';
+    P.store = s; P.tote = ''; P.lastTote = ''; P.visit = 0;
     P.trips = tripsOfStore(s.id);
     g('phQ').value = ''; g('phSugg').innerHTML = ''; g('phQMsg').textContent = '';
     g('phPick').hidden = true; g('phWork').hidden = false;
     g('phStore').innerHTML = '<b>' + esc(s.id) + '</b>' + (s.name ? ' · ' + esc(s.name) : '') + '<small id="phStoreNote"></small>';
-    beep(true); renderStoreNote(); loadStats(); renderTrips(); renderTote(); renderList(); startCam(); focusScan();
+    beep(true); renderStoreNote(); renderDone(); loadStats(); renderTrips(); renderTote(); renderList(); startCam(); focusScan();
   }
-  function backToPick() {
-    P.store = null; P.tote = ''; P.lastTote = ''; P.trips = [];
+  function backToPick(force) {
+    if (force !== true && P.visit > 0) {                              // đã chụp mà chưa bấm XONG: không cho đổi cửa hàng
+      beep(false); say('Đã chụp ' + P.visit + ' ảnh: bấm XONG CỬA HÀNG trước khi đổi cửa hàng.', 'bad'); return;
+    }
+    P.store = null; P.tote = ''; P.lastTote = ''; P.trips = []; P.visit = 0;
     stopCam();
     g('phWork').hidden = true; g('phPick').hidden = false;
     focusQ(); loadPlan().then(() => { if (!P.store && visible()) renderSugg(); });
@@ -256,7 +306,7 @@ const PH = (() => {
   function submitTote(raw) {
     P.lastSubmit = Date.now();
     const c = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
-    if (isStoreCode(c)) { beep(false); say('Đây là mã cửa hàng. Muốn đổi cửa hàng thì bấm "Đổi cửa hàng".', 'bad'); return; }
+    if (isStoreCode(c)) { beep(false); say('Đây là mã cửa hàng. Muốn đổi cửa hàng thì bấm XONG CỬA HÀNG (hoặc "Đổi cửa hàng" nếu chưa chụp ảnh nào).', 'bad'); return; }
     if (!isTote(c)) { beep(false); P.tote = ''; renderTote(); say('Mã quét không phải mã rổ: ' + c + ' (bỏ qua cũng được, vẫn bấm CHỤP)', 'bad'); return; }
     P.tote = c; beep(true); renderTote();
   }
@@ -379,8 +429,8 @@ const PH = (() => {
       await idb.put(item);
       addShot(item);
       beep(true);
-      P.lastTote = P.tote; P.tote = '';
-      renderTote();
+      P.lastTote = P.tote; P.tote = ''; P.visit++;
+      renderTote(); renderDone();
       const t = g('phTote'); t.className = 'ph-tote ok'; t.innerHTML = 'Đã lưu ✓ <b>' + esc(item.tote || 'không mã rổ') + '</b> (' + item.kb + ' KB)' + (warn.length ? ' <span class="ph-warn">⚠ Ảnh có thể ' + esc(warn.join('/')).toLowerCase() + ', nên chụp thêm</span>' : '');
       if (warn.length) beep(false);
       pump();
@@ -437,10 +487,13 @@ const PH = (() => {
   async function updateQInfo() {
     const box = g('phQInfo'); if (!box) return;
     let n = 0, dead = 0;
-    try { const a = await idb.all(); n = a.length; dead = a.filter(x => x.dead).length; } catch {}
-    box.hidden = !n && !dry();
+    let fin = 0;
+    try { const a = await idb.all(); n = a.filter(x => !x.kind).length; fin = a.filter(x => x.kind === 'finish').length; dead = a.filter(x => x.dead).length; } catch {}
+    // Ảnh chờ gửi cứ gửi ngầm, KHÔNG báo người dùng; chỉ hiện khi có vấn đề (ảnh lỗi) hoặc tồn quá nhiều (cần giữ app mở / có mạng)
+    const show = (n || fin) && (dead > 0 || n >= QUEUE_WARN);
+    box.hidden = !show && !dry();
     box.innerHTML = (dry() ? '<b>CHẾ ĐỘ THỬ:</b> ảnh KHÔNG gửi lên Drive. ' : '') +
-      (n ? 'Còn <b>' + n + '</b> ảnh chưa gửi' + (dead ? ' (' + dead + ' lỗi)' : '') + (n >= QUEUE_WARN ? ' · giữ app mở và có mạng để gửi hết' : '') + ' <button type="button" class="ghost" id="phRetry">Gửi ngay</button>' : '');
+      (show ? 'Còn <b>' + n + '</b> ảnh' + (fin ? ' + <b>' + fin + '</b> kết thúc cửa hàng' : '') + ' chưa gửi' + (dead ? ' (' + dead + ' lỗi)' : '') + (n >= QUEUE_WARN ? ' · giữ app mở và có mạng để gửi hết' : '') + ' <button type="button" class="ghost" id="phRetry">Gửi ngay</button>' : '');
   }
 
   // ---------- Gửi ảnh lên proxy ----------
@@ -456,7 +509,7 @@ const PH = (() => {
         const all = (await idb.all()).filter(i => !i.dead).sort((a, b) => a.takenAt - b.takenAt);
         const items = all.filter(i => !(i.holdUntil > now));        // ảnh bị máy chủ từ chối được gác tới hạn thử lại, KHÔNG chặn các ảnh phía sau
         if (!items.length) { if (all.length) retryIn = Math.max(1000, Math.min(...all.map(i => i.holdUntil || 0)) - now); break; }
-        const r = await sendBatch(takeBatch(items));
+        const r = items[0].kind === 'finish' ? await sendFinish(items[0]) : await sendBatch(takeBatch(items));
         if (r.retry) { retryIn = r.retry; break; }
       }
     } catch { retryIn = 15000; }
@@ -470,7 +523,7 @@ const PH = (() => {
     const first = items[0], b = [first]; let kb = first.kb || 0;
     if (P.noBatch) return b;
     for (const it of items.slice(1)) {
-      if (b.length >= BATCH_MAX || it.emp !== first.emp || kb + (it.kb || 0) > BATCH_KB_MAX) break;
+      if (it.kind === 'finish' || b.length >= BATCH_MAX || it.emp !== first.emp || kb + (it.kb || 0) > BATCH_KB_MAX) break;     // lô chỉ gồm ảnh, dừng trước việc kết thúc cửa hàng
       b.push(it); kb += it.kb || 0;
     }
     return b;
@@ -531,6 +584,31 @@ const PH = (() => {
     } finally { clearTimeout(tm); netDone(); }
   }
 
+  // Gửi 1 việc "kết thúc cửa hàng". Trả { retry: ms } nếu phải dừng chờ (lỗi mạng), {} nếu xong hoặc đã gác lại.
+  async function sendFinish(it) {
+    if (dry()) { await idb.del(it.id); return {}; }
+    if (!/^https:\/\//i.test(PHOTO_URL)) { const r = await failItem(it, 'Chưa cấu hình địa chỉ máy chủ ảnh', true); return r ? { retry: r } : {}; }
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 60000);
+    netStart();
+    try {
+      const res = await proxyFetch(PHOTO_URL, { action: 'finishStore', emp: it.emp, finishId: it.id, store: it.store, storeName: it.storeName, takenAt: it.takenAt }, ctl.signal);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data && data.__error) {
+        const m = String(data.__error);
+        if (/^NO_EMP/.test(m)) { await killItem(it, 'Mã nhân viên không còn hợp lệ'); return {}; }
+        await failItem(it, /Hành động không hợp lệ/i.test(m) ? 'Máy chủ ảnh chưa cập nhật (chưa có kết thúc cửa hàng)' : m, false);
+        return {};
+      }
+      if (data && data.ok) { await idb.del(it.id); clearTimeout(P.statsTimer); P.statsTimer = setTimeout(() => loadStats(true), 800); return {}; }
+      await failItem(it, 'Máy chủ trả kết quả lạ', false);
+      return {};
+    } catch (e) {
+      const r = await failItem(it, e.name === 'AbortError' ? 'Quá thời gian gửi, sẽ thử lại' : 'Mất mạng hoặc máy chủ bận, sẽ thử lại', true);
+      return r ? { retry: r } : {};
+    } finally { clearTimeout(tm); netDone(); }
+  }
+
   async function retryAll() {
     try { const a = await idb.all(); for (const it of a) { if (it.dead || it.holdUntil) { it.dead = false; it.tries = 0; it.holdUntil = 0; await idb.put(it); setShot(it.id, 'wait'); } } } catch {}
     pump();
@@ -539,18 +617,28 @@ const PH = (() => {
   // Mở lại app: ảnh còn trong hàng đợi (lần trước chưa gửi xong) hiện lại trong danh sách và được gửi tiếp
   async function restoreQueue() {
     try {
-      (await idb.all()).sort((a, b) => a.takenAt - b.takenAt).forEach(it => { if (!P.shots.some(s => s.id === it.id)) addShot(it, it.dead ? 'err' : 'wait'); });
+      (await idb.all()).sort((a, b) => a.takenAt - b.takenAt).forEach(it => { if (!it.kind && !P.shots.some(s => s.id === it.id)) addShot(it, it.dead ? 'err' : 'wait'); });
     } catch {}
     pump();
   }
 
   // ---------- Điều khiển giao diện ----------
+  // Chọn cửa hàng có 2 cách: QUÉT (bàn phím ảo tắt, bắn PDA vào ô) hoặc NHẬP TAY (bật bàn phím gõ số/tên). Danh sách cửa hàng luôn hiện ở cả hai.
+  function setQMode(m, noFocus) {
+    P.qmode = m === 'type' ? 'type' : 'scan'; save('ph:qmode', P.qmode);
+    document.querySelectorAll('#phQSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === P.qmode));
+    const i = g('phQ');
+    i.inputMode = P.qmode === 'type' ? 'text' : 'none';
+    i.placeholder = P.qmode === 'type' ? 'Gõ số hoặc tên cửa hàng (vd 0052)' : 'Bấm nút quét của PDA, quét mã cửa hàng';
+    if (!noFocus) { i.blur(); setTimeout(() => i.focus(), 30); }
+  }
   function focusQ() { const i = g('phQ'); if (!i) return; i.value = ''; renderSugg(); setTimeout(() => i.focus(), 30); }
   function focusScan() { const i = g('phScan'); if (!i) return; i.value = ''; setTimeout(() => i.focus(), 30); }
 
   function show() {
     bind();
     g('phDry').hidden = !dry();
+    setQMode(P.qmode, true);
     loadStores().then(() => { if (!P.store && visible()) renderSugg(); });
     loadStats(true);
     loadPlan().then(() => { if (visible()) { if (P.store && !P.trips.length) { P.trips = tripsOfStore(P.store.id); renderTrips(); } else if (!P.store) renderSugg(); } });
@@ -561,8 +649,9 @@ const PH = (() => {
   // Đổi người / hết phiên: bỏ cửa hàng + rổ đang chọn, tắt camera (ảnh trong hàng đợi vẫn giữ và vẫn gửi theo đúng người đã chụp)
   function reset() {
     clearTimeout(P.pickTimer); clearTimeout(P.scanTimer);
-    P.store = null; P.tote = ''; P.lastTote = ''; P.trips = []; P.stats = null;
+    P.store = null; P.tote = ''; P.lastTote = ''; P.trips = []; P.stats = null; P.visit = 0;
     stopCam();
+    if (g('phFin')) g('phFin').hidden = true;
     if (g('phStats')) g('phStats').innerHTML = '';
     if (g('phWork')) { g('phWork').hidden = true; g('phPick').hidden = false; g('phQ').value = ''; }
   }
@@ -575,7 +664,11 @@ const PH = (() => {
     if (P.bound) return; P.bound = true;
     g('phQ').oninput = onQInput;
     g('phQ').onkeydown = onQKey;
-    g('phBack').onclick = backToPick;
+    g('phBack').onclick = () => backToPick();
+    g('phQSeg').onclick = e => { const b = e.target.closest('button[data-m]'); if (b) setQMode(b.dataset.m); };
+    g('phDone').onclick = askFinish;
+    g('phFinNo').onclick = () => { g('phFin').hidden = true; focusScan(); };
+    g('phFinOk').onclick = doFinish;
     g('phSugg').onclick = e => {
       if (e.target.closest('.ph-todo-btn')) { P.onlyTodo = !P.onlyTodo; renderSugg(); return; }
       const b = e.target.closest('.sg[data-id]'); if (b) pickStore(storeById(b.dataset.id));
@@ -602,11 +695,11 @@ const PH = (() => {
       // Enter trống = chụp (bỏ qua Enter đi kèm ngay sau một lần quét)
       if (Date.now() - P.lastSubmit > 600 && canShoot()) capture();
     };
-    const kbd = () => { P.kbd = !P.kbd; ['phScan', 'phQ'].forEach(id => g(id).inputMode = P.kbd ? 'text' : 'none'); const i = P.store ? g('phScan') : g('phQ'); i.blur(); i.focus(); };
-    g('phKbd').onclick = kbd; g('phKbd2').onclick = kbd;
+    g('phKbd').onclick = () => { P.kbd = !P.kbd; g('phScan').inputMode = P.kbd ? 'text' : 'none'; g('phScan').blur(); g('phScan').focus(); };   // bàn phím cho ô quét MÃ RỔ
     // PDA hay mất focus sau khi bấm nút: quay lại ô quét
     document.addEventListener('click', e => {
-      if (visible() && !e.target.closest('input,dialog,.rail,#phSugg')) setTimeout(() => { if (visible()) (P.store ? g('phScan') : g('phQ')).focus(); }, 50);
+      if (visible() && !g('phFin').hidden) return;                      // đang hiện hộp xác nhận Xong: không giành tiêu điểm
+      if (visible() && !e.target.closest('input,dialog,.rail,#phSugg,#phQSeg')) setTimeout(() => { if (visible()) (P.store ? g('phScan') : g('phQ')).focus(); }, 50);
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) stopCam(); else if (wantCam()) startCam(); });
     window.addEventListener('online', pump);
