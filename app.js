@@ -12,7 +12,7 @@ const LOCKED = !!PROXY_URL && !ADMIN;
 const FLASH_MS = 60000;      // giữ tô sáng ô vừa đổi
 const FRESH_MS = 10 * 60000; // bản lưu cũ hơn mức này thì không dùng làm mốc so sánh
 const IDLE_MS = 10 * 60000;  // PDA dùng chung: quá thời gian này không chạm/quét gì thì tự đăng xuất
-const ENABLED_TABS = ['list', 'move', 'frozen', 'set']; // Kiểm hàng, Ghép PAXD: tạm khoá
+const ENABLED_TABS = ['list', 'move', 'photo', 'lookup', 'set']; // Ghép PAXD: tạm khoá. Chụp ảnh (photo.js) thay cho tab Kiểm hàng cũ
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -35,6 +35,8 @@ const S = {
   updatedAt: null, busy: false, error: null, timer: null,
 };
 
+// Phần ảnh (photo.js, lookup.js) là chức năng thêm: lỗi hoặc thiếu file của nó KHÔNG được làm hỏng Điều hàng / Hàng chờ
+function safe(f) { try { f(); } catch (e) { console.error('Chức năng ảnh lỗi:', e); } }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
 const sum = a => a.reduce((x, y) => x + y, 0);
@@ -302,6 +304,8 @@ function logout(reason, msg) {
   sendLogout(e, reason);
   S.work = null; // KHOÁ CỨNG: giữ jobStore, mã làm dở vẫn còn khi đăng nhập lại đúng người đó
   closeWork();
+  safe(() => PH.reset());       // bỏ cửa hàng/rổ đang chọn + tắt camera (ảnh chưa gửi vẫn giữ trong hàng đợi)
+  safe(() => LK.reset());       // xoá ảnh đang xem khỏi bộ nhớ (người sau không thấy)
   setEmp(null);
   $('#moveOut').innerHTML = ''; $('#empOut').innerHTML = ''; $('#empCode').value = '';
   if (msg) toast(msg);
@@ -692,7 +696,8 @@ function showTab(t) {
   S.tab = t; store.set('tab', t);
   $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + t; v.classList.toggle('on', !v.hidden); });
   $$('.rail-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  if (t === 'frozen') FZ.show();
+  safe(() => { if (t === 'photo') PH.show(); else PH.hide(); });   // rời tab Chụp ảnh thì tắt camera
+  safe(() => { if (t === 'lookup') LK.show(); });
   if (t === 'list' && (!S.updatedAt || (S.every > 0 && Date.now() - S.updatedAt > S.every * 1000))) refresh();
   if (t === 'move') {
     renderEmp();
@@ -704,7 +709,7 @@ function showTab(t) {
 // ---------- Tự cập nhật khi bạn đẩy bản mới lên GitHub ----------
 // App mở sẵn cả ngày vẫn chạy bản cũ nếu không tải lại. App định kỳ hỏi GitHub nội dung các file chính, thấy khác
 // bản đang chạy thì tự tải lại, nhưng CHỈ khi không làm gián đoạn ai: không tải lại lúc đang làm một mã (màn hình khoá).
-const APP_FILES = ['index.html', 'app.js', 'style.css', 'frozen.js', 'frozen.css'];
+const APP_FILES = ['index.html', 'app.js', 'style.css', 'photo.js', 'photo.css', 'lookup.js'];
 let baseFp = null, updateReady = false;
 
 async function fingerprint() {
@@ -812,6 +817,8 @@ function init() {
   showTab(ENABLED_TABS.includes(S.tab) ? S.tab : 'list');
   if (S.tab !== 'list') refresh();
   schedule();
+
+  safe(() => PH.init());        // nạp lại hàng đợi ảnh chưa gửi (lần mở trước) và gửi tiếp
 
   setupAutoUpdate();
 }
