@@ -695,6 +695,14 @@ const PH = (() => {
       // Enter trống = chụp (bỏ qua Enter đi kèm ngay sau một lần quét)
       if (Date.now() - P.lastSubmit > 600 && canShoot()) capture();
     };
+    // Phím cứng chụp ảnh: ENT (hoặc Enter) ở bất kỳ đâu trên màn chụp, kể cả khi tiêu điểm không nằm ở ô quét. Không chặn khi đang gõ vào ô khác hay hiện hộp xác nhận.
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.repeat || !visible() || !P.store || !g('phFin').hidden) return;
+      const t = e.target;
+      if (t && (t.id === 'phScan' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'DIALOG')) return;   // ô quét đã có xử lý riêng
+      e.preventDefault();                                              // tránh Enter bấm nhầm nút đang giữ tiêu điểm (VD XONG CỬA HÀNG)
+      if (Date.now() - P.lastSubmit > 600 && canShoot()) capture();
+    }, true);
     g('phKbd').onclick = () => { P.kbd = !P.kbd; g('phScan').inputMode = P.kbd ? 'text' : 'none'; g('phScan').blur(); g('phScan').focus(); };   // bàn phím cho ô quét MÃ RỔ
     // PDA hay mất focus sau khi bấm nút: quay lại ô quét
     document.addEventListener('click', e => {
