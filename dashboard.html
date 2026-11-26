@@ -62,7 +62,7 @@
 'use strict';
 // Trang chủ KHÔNG chứa key trong địa chỉ. Bấm vào bảng nào lần đầu thì hỏi mã xem bảng đó, rồi nhớ trên máy này (localStorage).
 // Có thể nhập sẵn bằng link:  dashboard.html#key=<key Sorting>&mkey=<key Mover>  (key được cất đi rồi xoá khỏi thanh địa chỉ).
-// &lang=vi|en|ko chọn ngôn ngữ cho bảng Sorting.
+// Thêm &all=1 để hiện thẻ MOVER Productivity (có tên và thời gian từng người, mặc định ẩn); &lang=vi|en|ko cho bảng Sorting.
 const $ = id => document.getElementById(id), enc = encodeURIComponent;
 const get = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const put = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { /* trình duyệt chặn lưu thì hỏi lại mỗi lần */ } };
@@ -70,15 +70,19 @@ const put = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.remo
 const h = new URLSearchParams(location.hash.replace(/^#/, ''));
 if (h.get('key')) put('dk_sorting', h.get('key'));
 if (h.get('mkey')) put('dk_mover', h.get('mkey'));
+if (h.get('all') === '1') put('dk_all', '1');
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);   // xoá key khỏi thanh địa chỉ
 const lang = h.get('lang') || new URLSearchParams(location.search).get('lang') || '';
 
 const ITEMS = [
-  { k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian từng người). Chỉ dành cho quản lý.',
-    store: 'dk_mover', url: key => 'productivity.html#key=' + enc(key) },
+  { k: 'MOVER', n: 'Progress', d: 'Tiến độ điều hàng hôm nay: Actual / Plan, hàng chờ còn lại, sản lượng từng nhân viên.',
+    store: 'dk_mover', url: key => 'tv.html#key=' + enc(key) },
   { k: 'SORTING', n: 'Productivity', d: 'Năng suất sorting theo nhân viên, theo giờ và theo Zone / Line. Chọn ngày, tải Excel.',
     store: 'dk_sorting', url: key => 'sorting.html' + (lang ? '?lang=' + enc(lang) : '') + '#key=' + enc(key) },
 ];
+if (get('dk_all') === '1') ITEMS.push({ k: 'MOVER', n: 'Productivity', d: 'Năng suất mover theo người (có tên và thời gian). Chỉ dành cho quản lý.',
+  store: 'dk_mover', url: key => 'productivity.html#key=' + enc(key) });
+
 $('cards').innerHTML = ITEMS.map((i, n) =>
   `<button class="card" type="button" data-n="${n}"><div class="k">${i.k}</div><div class="n">${i.n}</div><div class="d">${i.d}</div><div class="go">Mở bảng →</div></button>`).join('');
 
